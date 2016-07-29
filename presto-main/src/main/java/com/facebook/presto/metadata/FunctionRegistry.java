@@ -65,6 +65,7 @@ import com.facebook.presto.operator.scalar.ArrayFunctions;
 import com.facebook.presto.operator.scalar.ArrayGreaterThanOperator;
 import com.facebook.presto.operator.scalar.ArrayGreaterThanOrEqualOperator;
 import com.facebook.presto.operator.scalar.ArrayHashCodeOperator;
+import com.facebook.presto.operator.scalar.ArrayIndeterminateOperator;
 import com.facebook.presto.operator.scalar.ArrayIntersectFunction;
 import com.facebook.presto.operator.scalar.ArrayLessThanOperator;
 import com.facebook.presto.operator.scalar.ArrayLessThanOrEqualOperator;
@@ -99,6 +100,7 @@ import com.facebook.presto.operator.scalar.MapDistinctFromOperator;
 import com.facebook.presto.operator.scalar.MapEntriesFunction;
 import com.facebook.presto.operator.scalar.MapEqualOperator;
 import com.facebook.presto.operator.scalar.MapFromEntriesFunction;
+import com.facebook.presto.operator.scalar.MapIndeterminateOperator;
 import com.facebook.presto.operator.scalar.MapKeys;
 import com.facebook.presto.operator.scalar.MapNotEqualOperator;
 import com.facebook.presto.operator.scalar.MapSubscriptOperator;
@@ -263,6 +265,7 @@ import static com.facebook.presto.operator.scalar.RowEqualOperator.ROW_EQUAL;
 import static com.facebook.presto.operator.scalar.RowGreaterThanOperator.ROW_GREATER_THAN;
 import static com.facebook.presto.operator.scalar.RowGreaterThanOrEqualOperator.ROW_GREATER_THAN_OR_EQUAL;
 import static com.facebook.presto.operator.scalar.RowHashCodeOperator.ROW_HASH_CODE;
+import static com.facebook.presto.operator.scalar.RowIndeterminateOperator.ROW_INDETERMINATE;
 import static com.facebook.presto.operator.scalar.RowLessThanOperator.ROW_LESS_THAN;
 import static com.facebook.presto.operator.scalar.RowLessThanOrEqualOperator.ROW_LESS_THAN_OR_EQUAL;
 import static com.facebook.presto.operator.scalar.RowNotEqualOperator.ROW_NOT_EQUAL;
@@ -504,6 +507,7 @@ public class FunctionRegistry
                 .scalars(CharOperators.class)
                 .scalar(DecimalOperators.Negation.class)
                 .scalar(DecimalOperators.HashCode.class)
+                .scalar(DecimalOperators.Indeterminate.class)
                 .functions(IDENTITY_CAST, CAST_FROM_UNKNOWN)
                 .scalar(ArrayLessThanOperator.class)
                 .scalar(ArrayLessThanOrEqualOperator.class)
@@ -527,6 +531,7 @@ public class FunctionRegistry
                 .scalar(ArrayUnionFunction.class)
                 .scalar(ArrayExceptFunction.class)
                 .scalar(ArraySliceFunction.class)
+                .scalar(ArrayIndeterminateOperator.class)
                 .scalar(MapDistinctFromOperator.class)
                 .scalar(MapEqualOperator.class)
                 .scalar(MapEntriesFunction.class)
@@ -538,6 +543,7 @@ public class FunctionRegistry
                 .scalars(EmptyMapConstructor.class)
                 .scalar(TypeOfFunction.class)
                 .scalar(TryFunction.class)
+                .scalar(MapIndeterminateOperator.class)
                 .functions(ZIP_WITH_FUNCTION, MAP_ZIP_WITH_FUNCTION)
                 .functions(ZIP_FUNCTIONS)
                 .functions(ARRAY_JOIN, ARRAY_JOIN_WITH_NULL_REPLACEMENT)
@@ -587,6 +593,7 @@ public class FunctionRegistry
                 .functions(ARRAY_TRANSFORM_FUNCTION, ARRAY_REDUCE_FUNCTION)
                 .functions(MAP_FILTER_FUNCTION, MAP_TRANSFORM_KEY_FUNCTION, MAP_TRANSFORM_VALUE_FUNCTION)
                 .function(TRY_CAST)
+                .function(ROW_INDETERMINATE)
                 .aggregate(MergeSetDigestAggregation.class)
                 .aggregate(BuildSetDigestAggregation.class)
                 .scalars(SetDigestFunctions.class)
