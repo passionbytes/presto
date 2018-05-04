@@ -478,6 +478,199 @@ public abstract class AbstractTestQueries
     }
 
     @Test
+    public void testMapInSubquery()
+    {
+        assertQuery("" +
+                        "SELECT MAP(ARRAY[1,2], ARRAY[nationkey, regionkey]) IN (SELECT MAP(ARRAY[1,2], ARRAY[nationkey, regionkey]) FROM nation WHERE nationkey < 0)" +
+                        "FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT MAP(ARRAY[1,2], ARRAY[nationkey, null]) IN (SELECT MAP(ARRAY[1,2], ARRAY[nationkey, regionkey]) FROM nation WHERE nationkey < 0)" +
+                        "FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT MAP(ARRAY[1,2], ARRAY[NULL, NULL]) IN (SELECT MAP(ARRAY[1,2], ARRAY[nationkey, regionkey]) FROM nation WHERE nationkey < 0)" +
+                        "FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT MAP() IN (SELECT MAP(ARRAY[1,2], ARRAY[nationkey, regionkey]) FROM nation WHERE nationkey < 0)" +
+                        "FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT MAP(ARRAY[1,2], ARRAY[nationkey, regionkey]) IN (SELECT null FROM nation WHERE nationkey = 1)" +
+                        "FROM nation ",
+                "SELECT null FROM nation");
+        assertQuery("" +
+                        "SELECT MAP(ARRAY[1,2], ARRAY[nationkey, regionkey]) IN (SELECT null FROM nation) FROM nation",
+                "SELECT null FROM nation");
+//        assertQuery("" +
+//                        "SELECT MAP(ARRAY[1,3], ARRAY[nationkey, regionkey]) IN (SELECT MAP(ARRAY[1,2], ARRAY[NULL, NULL]) FROM nation WHERE nationkey = 1)" +
+//                        "FROM nation ",
+//                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT MAP(ARRAY[2,2], ARRAY[nationkey, regionkey]) IN (SELECT MAP(ARRAY[1,2], ARRAY[NULL, NULL]) FROM nation WHERE nationkey = 1)" +
+                        "FROM nation ",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT MAP(ARRAY[1,2], ARRAY[nationkey, regionkey]) IN (SELECT MAP(ARRAY[1,2], ARRAY[NULL, NULL]) FROM nation WHERE nationkey = 1)" +
+                        "FROM nation ",
+                "SELECT null FROM nation");
+//        assertQuery("" +
+//                        "SELECT MAP(ARRAY[1,2], ARRAY[1, null]) IN (SELECT MAP(ARRAY[1,2], ARRAY[1, 1]) FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT null FROM nation");
+//        assertQuery("" +
+//                       "SELECT MAP(ARRAY[1,2], ARRAY[1, null]) IN (SELECT MAP(ARRAY[1,2], ARRAY[1, null]) FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT null FROM nation");
+        assertQuery("" +
+                        "SELECT MAP(ARRAY[1,2], ARRAY[1, null]) IN (SELECT MAP(ARRAY[1,2], ARRAY[2, 1]) FROM nation WHERE nationkey = 1) FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT MAP(ARRAY[1,2], ARRAY[1, null]) IN ((SELECT MAP(ARRAY[1,2], ARRAY[1, 1]) FROM nation WHERE nationkey = 1) UNION ALL (SELECT MAP(ARRAY[1,2], ARRAY[2, 1]) FROM nation WHERE nationkey = 2)) FROM nation",
+                "SELECT false FROM nation");
+//        assertQuery("" +
+//                        "SELECT MAP(ARRAY[1,2], ARRAY[null, null]) IN (SELECT MAP(ARRAY[1,2], ARRAY[1, 1]) FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT null FROM nation");
+        assertQuery("" +
+                        "SELECT MAP(ARRAY[1,2], ARRAY[nationkey, nationkey]) IN (SELECT MAP(ARRAY[1,2], ARRAY[-1, null]) FROM nation WHERE nationkey = 1) FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT MAP(ARRAY[1,2], ARRAY[1, nationkey]) IN (SELECT MAP(ARRAY[1,2], ARRAY[1, null]) FROM nation WHERE nationkey = 1) FROM nation",
+                "SELECT null FROM nation");
+//        assertQuery("" +
+//                        "SELECT MAP(ARRAY[1,2], ARRAY[1, 1]) IN ((SELECT MAP(ARRAY[1,2], ARRAY[1, null]) FROM nation WHERE nationkey = 1) UNION ALL (SELECT MAP(ARRAY[1,2], ARRAY[2, null]) FROM nation WHERE nationkey = 2)) FROM nation",
+//                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT MAP(ARRAY[1,2], ARRAY[nationkey, regionkey]) IN (SELECT MAP(ARRAY[1,2], ARRAY[null, null]) FROM nation WHERE nationkey = 1) FROM nation",
+                "SELECT null FROM nation");
+        assertQuery("" +
+                        "SELECT MAP(ARRAY[1,2], ARRAY[nationkey, null]) IN (SELECT MAP(ARRAY[1,2], ARRAY[-2, null]) FROM nation WHERE nationkey = 1) FROM nation",
+                "SELECT false FROM nation");
+    }
+
+    @Test
+    public void testArrayInSubquery()
+    {
+        assertQuery("" +
+                        "SELECT ARRAY[nationkey, regionkey] IN (SELECT ARRAY[nationkey, regionkey] FROM nation WHERE nationkey < 0)" +
+                        "FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT ARRAY[nationkey, null] IN (SELECT ARRAY[nationkey, regionkey] FROM nation WHERE nationkey < 0)" +
+                        "FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT ARRAY[NULL, NULL] IN (SELECT ARRAY[nationkey, regionkey] FROM nation WHERE nationkey < 0)" +
+                        "FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT ARRAY[] IN (SELECT ARRAY[nationkey, regionkey] FROM nation WHERE nationkey < 0)" +
+                        "FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT ARRAY[nationkey, regionkey] IN (SELECT null FROM nation WHERE nationkey = 1)" +
+                        "FROM nation ",
+                "SELECT null FROM nation");
+        assertQuery("" +
+                        "SELECT ARRAY[nationkey, regionkey] IN (SELECT null FROM nation) FROM nation",
+                "SELECT null FROM nation");
+//        assertQuery("" +
+//                        "SELECT ARRAY[nationkey, regionkey] IN (SELECT ARRAY[NULL, NULL] FROM nation WHERE nationkey = 1)" +
+//                        "FROM nation ",
+//                "SELECT null FROM nation");
+//        assertQuery("" +
+//                        "SELECT ARRAY[1, null] IN (SELECT ARRAY[1, 1] FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT null FROM nation");
+//        assertQuery("" +
+//                       "SELECT ARRAY[1, null] IN (SELECT ARRAY[1, null] FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT null FROM nation");
+        assertQuery("" +
+                        "SELECT ARRAY[1, null] IN (SELECT ARRAY[2, 1] FROM nation WHERE nationkey = 1) FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT ARRAY[1, null] IN ((SELECT ARRAY[1, 1] FROM nation WHERE nationkey = 1) UNION ALL (SELECT ARRAY[2, 1] FROM nation WHERE nationkey = 2)) FROM nation",
+                "SELECT false FROM nation");
+//        assertQuery("" +
+//                        "SELECT ARRAY[null, null] IN (SELECT ARRAY[1, 1] FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT null FROM nation");
+        assertQuery("" +
+                        "SELECT ARRAY[nationkey, nationkey] IN (SELECT ARRAY[-1, null] FROM nation WHERE nationkey = 1) FROM nation",
+                "SELECT false FROM nation");
+//        assertQuery("" +
+//                        "SELECT ARRAY[1, nationkey] IN (SELECT ARRAY[1, null] FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT null FROM nation");
+//        assertQuery("" +
+//                        "SELECT ARRAY[1, 1] IN ((SELECT ARRAY[1, null] FROM nation WHERE nationkey = 1) UNION ALL (SELECT ARRAY[2, null] FROM nation WHERE nationkey = 2)) FROM nation",
+//                "SELECT false FROM nation");
+//        assertQuery("" +
+//                        "SELECT ARRAY[nationkey, regionkey] IN (SELECT ARRAY[null, null] FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT null FROM nation");
+        assertQuery("" +
+                        "SELECT ARRAY[nationkey, null] IN (SELECT ARRAY[-2, null] FROM nation WHERE nationkey = 1) FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT ARRAY[nationkey] IN (SELECT ARRAY[null, null] FROM nation WHERE nationkey = 1) FROM nation",
+                "SELECT false FROM nation");
+    }
+
+    @Test
+    public void testRowInSubquery()
+    {
+        assertQuery("" +
+                        "SELECT ROW(nationkey, regionkey) IN (SELECT ROW(nationkey, regionkey) FROM nation WHERE nationkey < 0)" +
+                        "FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT ROW(nationkey, null) IN (SELECT ROW(nationkey, regionkey) FROM nation WHERE nationkey < 0)" +
+                        "FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT ROW(NULL, NULL) IN (SELECT ROW(nationkey, regionkey) FROM nation WHERE nationkey < 0)" +
+                        "FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT ROW(nationkey, regionkey) IN (SELECT null FROM nation WHERE nationkey = 1)" +
+                        "FROM nation ",
+                "SELECT null FROM nation");
+        assertQuery("" +
+                        "SELECT ROW(nationkey, regionkey) IN (SELECT null FROM nation) FROM nation",
+                "SELECT null FROM nation");
+//        assertQuery("" +
+//                        "SELECT ROW(nationkey, regionkey) IN (SELECT ROW(NULL, NULL) FROM nation WHERE nationkey = 1)" +
+//                        "FROM nation ",
+//                "SELECT null FROM nation");
+//        assertQuery("" +
+//                        "SELECT ROW(1, null) IN (SELECT ROW(1, 1) FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT null FROM nation");
+//        assertQuery("" +
+//                       "SELECT ROW(1, null) IN (SELECT ROW(1, null) FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT null FROM nation");
+        assertQuery("" +
+                        "SELECT ROW(1, null) IN (SELECT ROW(2, 1) FROM nation WHERE nationkey = 1) FROM nation",
+                "SELECT false FROM nation");
+        assertQuery("" +
+                        "SELECT ROW(1, null) IN ((SELECT ROW(1, 1) FROM nation WHERE nationkey = 1) UNION ALL (SELECT ROW(2, 1) FROM nation WHERE nationkey = 2)) FROM nation",
+                "SELECT false FROM nation");
+//        assertQuery("" +
+//                        "SELECT ROW(null, null) IN (SELECT ROW(1, 1) FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT null FROM nation");
+        assertQuery("" +
+                        "SELECT ROW(nationkey, nationkey) IN (SELECT ROW(-1, null) FROM nation WHERE nationkey = 1) FROM nation",
+                "SELECT false FROM nation");
+//        assertQuery("" +
+//                        "SELECT ROW(1, nationkey) IN (SELECT ROW(1, null) FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT null FROM nation");
+//        assertQuery("" +
+//                        "SELECT ROW(1, 1) IN ((SELECT ROW(1, null) FROM nation WHERE nationkey = 1) UNION ALL (SELECT ROW(2, null) FROM nation WHERE nationkey = 2)) FROM nation",
+//                "SELECT false FROM nation");
+//        assertQuery("" +
+//                        "SELECT ROW(nationkey, regionkey) IN (SELECT ROW(null, null) FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT null FROM nation");
+//        assertQuery("" +
+//                        "SELECT ROW(nationkey, null) IN (SELECT ROW(-2, null) FROM nation WHERE nationkey = 1) FROM nation",
+//                "SELECT false FROM nation");
+    }
+
+    @Test
     public void testDereferenceInSubquery()
     {
         assertQuery("" +
@@ -566,7 +759,7 @@ public abstract class AbstractTestQueries
     public void testUnnest()
     {
         assertQuery("SELECT 1 FROM (VALUES (ARRAY[1])) AS t (a) CROSS JOIN UNNEST(a)", "SELECT 1");
-        assertQuery("SELECT x[1] FROM UNNEST(ARRAY[ARRAY[1, 2, 3]]) t(x)", "SELECT 1");
+        assertQuery("SELECT x[1] FROM UNNEST(ROW(ARRAY[1, 2, 3)]) t(x)", "SELECT 1");
         assertQuery("SELECT x[1][2] FROM UNNEST(ARRAY[ARRAY[ARRAY[1, 2, 3]]]) t(x)", "SELECT 2");
         assertQuery("SELECT x[2] FROM UNNEST(ARRAY[MAP(ARRAY[1,2], ARRAY['hello', 'hi'])]) t(x)", "SELECT 'hi'");
         assertQuery("SELECT * FROM UNNEST(ARRAY[1, 2, 3])", "SELECT * FROM VALUES (1), (2), (3)");
