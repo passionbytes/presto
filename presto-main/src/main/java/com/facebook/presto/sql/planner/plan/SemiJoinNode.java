@@ -36,6 +36,7 @@ public class SemiJoinNode
     private final Symbol filteringSourceJoinSymbol;
     private final Symbol semiJoinOutput;
     private final Optional<Symbol> sourceHashSymbol;
+    private final Optional<Symbol> filteringSourceNullSymbol;
     private final Optional<Symbol> filteringSourceHashSymbol;
     private final Optional<DistributionType> distributionType;
 
@@ -48,7 +49,8 @@ public class SemiJoinNode
             @JsonProperty("semiJoinOutput") Symbol semiJoinOutput,
             @JsonProperty("sourceHashSymbol") Optional<Symbol> sourceHashSymbol,
             @JsonProperty("filteringSourceHashSymbol") Optional<Symbol> filteringSourceHashSymbol,
-            @JsonProperty("distributionType") Optional<DistributionType> distributionType)
+            @JsonProperty("distributionType") Optional<DistributionType> distributionType,
+            @JsonProperty("filteringSourceNullSymbol") Optional<Symbol> filteringSourceNullSymbol)
     {
         super(id);
         this.source = requireNonNull(source, "source is null");
@@ -57,6 +59,7 @@ public class SemiJoinNode
         this.filteringSourceJoinSymbol = requireNonNull(filteringSourceJoinSymbol, "filteringSourceJoinSymbol is null");
         this.semiJoinOutput = requireNonNull(semiJoinOutput, "semiJoinOutput is null");
         this.sourceHashSymbol = requireNonNull(sourceHashSymbol, "sourceHashSymbol is null");
+        this.filteringSourceNullSymbol = requireNonNull(filteringSourceNullSymbol, "filteringSourceNullSymbol is null");
         this.filteringSourceHashSymbol = requireNonNull(filteringSourceHashSymbol, "filteringSourceHashSymbol is null");
         this.distributionType = requireNonNull(distributionType, "distributionType is null");
 
@@ -106,6 +109,12 @@ public class SemiJoinNode
         return sourceHashSymbol;
     }
 
+    @JsonProperty("filteringSourceNullSymbol")
+    public Optional<Symbol> getFilteringSourceNullSymbol()
+    {
+        return filteringSourceNullSymbol;
+    }
+
     @JsonProperty("filteringSourceHashSymbol")
     public Optional<Symbol> getFilteringSourceHashSymbol()
     {
@@ -152,6 +161,7 @@ public class SemiJoinNode
                 semiJoinOutput,
                 sourceHashSymbol,
                 filteringSourceHashSymbol,
-                distributionType);
+                distributionType,
+                filteringSourceNullSymbol);
     }
 }

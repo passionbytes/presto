@@ -15,18 +15,29 @@ package com.facebook.presto.sql.planner.iterative.rule;
 
 import com.facebook.presto.matching.Captures;
 import com.facebook.presto.matching.Pattern;
+import com.facebook.presto.metadata.FunctionRegistry;
+import com.facebook.presto.spi.type.BooleanType;
 import com.facebook.presto.sql.planner.Symbol;
 import com.facebook.presto.sql.planner.iterative.Rule;
 import com.facebook.presto.sql.planner.plan.ApplyNode;
+import com.facebook.presto.sql.planner.plan.Assignments;
+import com.facebook.presto.sql.planner.plan.PlanNode;
+import com.facebook.presto.sql.planner.plan.ProjectNode;
 import com.facebook.presto.sql.planner.plan.SemiJoinNode;
 import com.facebook.presto.sql.tree.Expression;
+import com.facebook.presto.sql.tree.FunctionCall;
 import com.facebook.presto.sql.tree.InPredicate;
+import com.facebook.presto.sql.tree.NullIfExpression;
+import com.facebook.presto.sql.tree.QualifiedName;
+import com.google.common.collect.ImmutableList;
 
 import java.util.Optional;
 
 import static com.facebook.presto.matching.Pattern.empty;
+import static com.facebook.presto.spi.function.OperatorType.INDETERMINATE;
 import static com.facebook.presto.sql.planner.plan.Patterns.Apply.correlation;
 import static com.facebook.presto.sql.planner.plan.Patterns.applyNode;
+import static com.facebook.presto.sql.tree.BooleanLiteral.TRUE_LITERAL;
 import static com.google.common.collect.Iterables.getOnlyElement;
 
 /**
@@ -79,15 +90,34 @@ public class TransformUncorrelatedInPredicateSubqueryToSemiJoin
         InPredicate inPredicate = (InPredicate) expression;
         Symbol semiJoinSymbol = getOnlyElement(applyNode.getSubqueryAssignments().getSymbols());
 
-        SemiJoinNode replacement = new SemiJoinNode(context.getIdAllocator().getNextId(),
+        PlanNode subqueryPlan = applyNode.getSubquery();
+
+        Expression nullExpression = new FunctionCall(
+                QualifiedName.of(FunctionRegistry.mangleOperatorName(INDETERMINATE)),
+                ImmutableList.of(Symbol.from(inPredicate.getValueList()).toSymbolReference()));
+        nullExpression = new NullIfExpression(nullExpression, TRUE_LITERAL);
+        Optional<Symbol> nullSymbol = Optional.of(context.getSymbolAllocator().newSymbol(nullExpression, BooleanType.BOOLEAN));
+
+        Assignments.Builder assignments = Assignments.builder();
+        for (Symbol symbol : subqueryPlan.getOutputSymbols()) {
+            assignments.put(symbol, symbol.toSymbolReference());
+        }
+        assignments.put(nullSymbol.get(), nullExpression);
+
+        SemiJoinNode replacement = new SemiJoinNode(
+                context.getIdAllocator().getNextId(),
                 applyNode.getInput(),
-                applyNode.getSubquery(),
+                new ProjectNode(
+                        context.getIdAllocator().getNextId(),
+                        subqueryPlan,
+                        assignments.build()),
                 Symbol.from(inPredicate.getValue()),
                 Symbol.from(inPredicate.getValueList()),
                 semiJoinSymbol,
                 Optional.empty(),
                 Optional.empty(),
-                Optional.empty());
+                Optional.empty(),
+                nullSymbol);
 
         return Result.ofPlanNode(replacement);
     }

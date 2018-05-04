@@ -431,6 +431,7 @@ public class PlanBuilder
                 semiJoinOutput,
                 sourceHashSymbol,
                 filteringSourceHashSymbol,
+                Optional.empty(),
                 Optional.empty());
     }
 

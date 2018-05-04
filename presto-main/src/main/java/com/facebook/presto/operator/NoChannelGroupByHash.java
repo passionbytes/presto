@@ -83,7 +83,13 @@ public class NoChannelGroupByHash
     }
 
     @Override
-    public boolean contains(int position, Page page, int[] hashChannels)
+    public boolean containsExact(int position, Page page, int[] hashChannels)
+    {
+        throw new UnsupportedOperationException("NoChannelGroupByHash does not support getHashCollisions");
+    }
+
+    @Override
+    public boolean containsIndeterminate(int position, Page page, int[] hashChannel)
     {
         throw new UnsupportedOperationException("NoChannelGroupByHash does not support getHashCollisions");
     }

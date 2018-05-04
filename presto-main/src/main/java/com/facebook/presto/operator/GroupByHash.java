@@ -20,6 +20,7 @@ import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.sql.gen.JoinCompiler;
 import com.google.common.annotations.VisibleForTesting;
 
+import java.lang.invoke.MethodHandle;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,7 +38,7 @@ public interface GroupByHash
             int expectedSize,
             JoinCompiler joinCompiler)
     {
-        return createGroupByHash(hashTypes, hashChannels, inputHashChannel, expectedSize, isDictionaryAggregationEnabled(session), joinCompiler, NOOP);
+        return createGroupByHash(hashTypes, hashChannels, inputHashChannel, Optional.empty(), Optional.empty(), expectedSize, isDictionaryAggregationEnabled(session), joinCompiler, NOOP);
     }
 
     static GroupByHash createGroupByHash(
@@ -49,10 +50,24 @@ public interface GroupByHash
             JoinCompiler joinCompiler,
             UpdateMemory updateMemory)
     {
+        return createGroupByHash(hashTypes, hashChannels, inputHashChannel, Optional.empty(), Optional.empty(), expectedSize, processDictionary, joinCompiler, updateMemory);
+    }
+
+    static GroupByHash createGroupByHash(
+            List<? extends Type> hashTypes,
+            int[] hashChannels,
+            Optional<Integer> inputHashChannel,
+            Optional<Integer> indeterminateChannel,
+            Optional<MethodHandle> equalFunction,
+            int expectedSize,
+            boolean processDictionary,
+            JoinCompiler joinCompiler,
+            UpdateMemory updateMemory)
+    {
         if (hashTypes.size() == 1 && hashTypes.get(0).equals(BIGINT) && hashChannels.length == 1) {
             return new BigintGroupByHash(hashChannels[0], inputHashChannel.isPresent(), expectedSize, updateMemory);
         }
-        return new MultiChannelGroupByHash(hashTypes, hashChannels, inputHashChannel, expectedSize, processDictionary, joinCompiler, updateMemory);
+        return new MultiChannelGroupByHash(hashTypes, hashChannels, inputHashChannel, indeterminateChannel, equalFunction, expectedSize, processDictionary, joinCompiler, updateMemory);
     }
 
     long getEstimatedSize();
@@ -71,7 +86,9 @@ public interface GroupByHash
 
     Work<GroupByIdBlock> getGroupIds(Page page);
 
-    boolean contains(int position, Page page, int[] hashChannels);
+    boolean containsExact(int position, Page page, int[] hashChannels);
+
+    boolean containsIndeterminate(int position, Page page, int[] hashChannel);
 
     long getRawHash(int groupyId);
 

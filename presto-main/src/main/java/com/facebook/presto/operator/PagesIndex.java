@@ -424,13 +424,13 @@ public class PagesIndex
 
     public PagesHashStrategy createPagesHashStrategy(List<Integer> joinChannels, OptionalInt hashChannel, Optional<List<Integer>> outputChannels)
     {
-        try {
-            return joinCompiler.compilePagesHashStrategyFactory(types, joinChannels, outputChannels)
-                    .createPagesHashStrategy(ImmutableList.copyOf(channels), hashChannel);
-        }
-        catch (Exception e) {
-            log.error(e, "Lookup source compile failed for types=%s error=%s", types, e);
-        }
+//        try {
+//            return joinCompiler.compilePagesHashStrategyFactory(types, joinChannels, outputChannels)
+//                    .createPagesHashStrategy(ImmutableList.copyOf(channels), hashChannel);
+//        }
+//        catch (Exception e) {
+//            log.error(e, "Lookup source compile failed for types=%s error=%s", types, e);
+//        }
 
         // if compilation fails, use interpreter
         return new SimplePagesHashStrategy(
@@ -478,26 +478,26 @@ public class PagesIndex
             Optional<List<Integer>> outputChannels)
     {
         List<List<Block>> channels = ImmutableList.copyOf(this.channels);
-        if (!joinChannels.isEmpty()) {
-            // todo compiled implementation of lookup join does not support when we are joining with empty join channels.
-            // This code path will trigger only for OUTER joins. To fix that we need to add support for
-            //        OUTER joins into NestedLoopsJoin and remove "type == INNER" condition in LocalExecutionPlanner.visitJoin()
-
-            try {
-                LookupSourceSupplierFactory lookupSourceFactory = joinCompiler.compileLookupSourceFactory(types, joinChannels, sortChannel, outputChannels);
-                return lookupSourceFactory.createLookupSourceSupplier(
-                        session,
-                        valueAddresses,
-                        channels,
-                        hashChannel,
-                        filterFunctionFactory,
-                        sortChannel,
-                        searchFunctionFactories);
-            }
-            catch (Exception e) {
-                log.error(e, "Lookup source compile failed for types=%s error=%s", types, e);
-            }
-        }
+//        if (!joinChannels.isEmpty()) {
+//            // todo compiled implementation of lookup join does not support when we are joining with empty join channels.
+//            // This code path will trigger only for OUTER joins. To fix that we need to add support for
+//            //        OUTER joins into NestedLoopsJoin and remove "type == INNER" condition in LocalExecutionPlanner.visitJoin()
+//
+//            try {
+//                LookupSourceSupplierFactory lookupSourceFactory = joinCompiler.compileLookupSourceFactory(types, joinChannels, sortChannel, outputChannels);
+//                return lookupSourceFactory.createLookupSourceSupplier(
+//                        session,
+//                        valueAddresses,
+//                        channels,
+//                        hashChannel,
+//                        filterFunctionFactory,
+//                        sortChannel,
+//                        searchFunctionFactories);
+//            }
+//            catch (Exception e) {
+//                log.error(e, "Lookup source compile failed for types=%s error=%s", types, e);
+//            }
+//        }
 
         // if compilation fails
         PagesHashStrategy hashStrategy = new SimplePagesHashStrategy(

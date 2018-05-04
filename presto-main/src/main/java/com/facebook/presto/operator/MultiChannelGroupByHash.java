@@ -24,10 +24,11 @@ import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.sql.gen.JoinCompiler;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import org.openjdk.jol.info.ClassLayout;
 
+import java.lang.invoke.MethodHandle;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -38,10 +39,12 @@ import static com.facebook.presto.operator.SyntheticAddress.decodeSliceIndex;
 import static com.facebook.presto.operator.SyntheticAddress.encodeSyntheticAddress;
 import static com.facebook.presto.spi.StandardErrorCode.GENERIC_INSUFFICIENT_RESOURCES;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
+import static com.facebook.presto.spi.type.TypeUtils.readNativeValue;
 import static com.facebook.presto.sql.gen.JoinCompiler.PagesHashStrategyFactory;
 import static com.facebook.presto.util.HashCollisionsEstimator.estimateNumberOfHashCollisions;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.base.Throwables.throwIfUnchecked;
 import static com.google.common.base.Verify.verify;
 import static io.airlift.slice.SizeOf.sizeOf;
 import static it.unimi.dsi.fastutil.HashCommon.arraySize;
@@ -66,6 +69,10 @@ public class MultiChannelGroupByHash
     private final OptionalInt precomputedHashChannel;
     private final boolean processDictionary;
     private PageBuilder currentPageBuilder;
+
+    private final Optional<Integer> indeterminateChannel;
+    private final Optional<MethodHandle> equalFunction;
+    private LongArrayList indeterminateRows;
 
     private long completedPagesMemorySize;
 
@@ -92,6 +99,8 @@ public class MultiChannelGroupByHash
             List<? extends Type> hashTypes,
             int[] hashChannels,
             Optional<Integer> inputHashChannel,
+            Optional<Integer> indeterminateChannel,
+            Optional<MethodHandle> equalFunction,
             int expectedSize,
             boolean processDictionary,
             JoinCompiler joinCompiler,
@@ -104,9 +113,26 @@ public class MultiChannelGroupByHash
         checkArgument(hashTypes.size() == hashChannels.length, "hashTypes and hashChannels have different sizes");
         checkArgument(expectedSize > 0, "expectedSize must be greater than zero");
 
+        this.equalFunction = requireNonNull(equalFunction, "equalFunction is null");
+        this.indeterminateChannel = requireNonNull(indeterminateChannel, "indeterminateChannel is null");
+        checkArgument(equalFunction.isPresent() == indeterminateChannel.isPresent(), "equalFunction and indeterminateChannel should be both present of both not");
+
+        ImmutableList.Builder<Type> typesBuilder = ImmutableList.builder();
+        typesBuilder.addAll(hashTypes);
+
         this.inputHashChannel = requireNonNull(inputHashChannel, "inputHashChannel is null");
-        this.types = inputHashChannel.isPresent() ? ImmutableList.copyOf(Iterables.concat(hashTypes, ImmutableList.of(BIGINT))) : this.hashTypes;
-        this.channels = hashChannels.clone();
+
+        if (inputHashChannel.isPresent()) {
+            typesBuilder.add(BIGINT);
+        }
+
+        if (indeterminateChannel.isPresent()) {
+            checkArgument(hashChannels.length == 1, "the length of hashChannels must be 1 when indeterminateChannel is present");
+            indeterminateRows = new LongArrayList();
+        }
+
+        this.types = typesBuilder.build();
+        this.channels = requireNonNull(hashChannels, "hashChannels is null").clone();
 
         this.hashGenerator = inputHashChannel.isPresent() ? new PrecomputedHashGenerator(inputHashChannel.get()) : new InterpretedHashGenerator(this.hashTypes, hashChannels);
         this.processDictionary = processDictionary;
@@ -116,12 +142,13 @@ public class MultiChannelGroupByHash
         // we add a new block builder to each list.
         ImmutableList.Builder<Integer> outputChannels = ImmutableList.builder();
         ImmutableList.Builder<ObjectArrayList<Block>> channelBuilders = ImmutableList.builder();
+        int hashChannelIndex = hashChannels.length;
         for (int i = 0; i < hashChannels.length; i++) {
             outputChannels.add(i);
             channelBuilders.add(ObjectArrayList.wrap(new Block[1024], 0));
         }
         if (inputHashChannel.isPresent()) {
-            this.precomputedHashChannel = OptionalInt.of(hashChannels.length);
+            this.precomputedHashChannel = OptionalInt.of(hashChannelIndex);
             channelBuilders.add(ObjectArrayList.wrap(new Block[1024], 0));
         }
         else {
@@ -224,7 +251,7 @@ public class MultiChannelGroupByHash
     }
 
     @Override
-    public boolean contains(int position, Page page, int[] hashChannels)
+    public boolean containsExact(int position, Page page, int[] hashChannels)
     {
         long rawHash = hashStrategy.hashRow(position, page);
         int hashPosition = (int) getHashPosition(rawHash, mask);
@@ -253,6 +280,42 @@ public class MultiChannelGroupByHash
     {
         long rawHash = hashGenerator.hashPosition(position, page);
         return putIfAbsent(position, page, rawHash);
+    }
+
+    @Override
+    public boolean containsIndeterminate(int position, Page page, int[] hashChannels)
+    {
+        if (equalFunction.isPresent()) {
+            checkArgument(hashChannels.length == 1, "the size of hashChannels must be 1");
+            for (int i = 0; i < indeterminateRows.size(); i++) {
+                long address = indeterminateRows.get(i);
+                Block block = channelBuilders.get(0).get(decodeSliceIndex(address));
+                int index = decodePosition(address);
+                if (block.isNull(index)) {
+                    return true;
+                }
+                try {
+                    Boolean result = (Boolean) equalFunction.get().invoke(
+                            readNativeValue(
+                                    hashTypes.get(hashChannels[0]),
+                                    page.getBlock(hashChannels[0]),
+                                    position),
+                            readNativeValue(
+                                    hashTypes.get(hashChannels[0]),
+                                    block,
+                                    index));
+                    if (result != null && !result) {
+                        continue;
+                    }
+                    return true;
+                }
+                catch (Throwable t) {
+                    throwIfUnchecked(t);
+                    throw new RuntimeException(t);
+                }
+            }
+        }
+        return false;
     }
 
     private int putIfAbsent(int position, Page page, long rawHash)
@@ -295,6 +358,9 @@ public class MultiChannelGroupByHash
         int pageIndex = channelBuilders.get(0).size() - 1;
         int pagePosition = currentPageBuilder.getPositionCount() - 1;
         long address = encodeSyntheticAddress(pageIndex, pagePosition);
+        if (indeterminateChannel.isPresent() && page.getBlock(indeterminateChannel.get()).isNull(position)) {
+            indeterminateRows.add(address);
+        }
 
         // record group id in hash
         int groupId = nextGroupId++;
@@ -476,6 +542,14 @@ public class MultiChannelGroupByHash
             verify(inputHashBlock instanceof DictionaryBlock, "data channel is dictionary encoded but hash channel is not");
             verify(((DictionaryBlock) inputHashBlock).getDictionarySourceId().equals(inputDataBlock.getDictionarySourceId()),
                     "dictionarySourceIds of data block and hash block do not match");
+        }
+        if (processDictionary && indeterminateChannel.isPresent()) {
+            Block inputHashBlock = page.getBlock(indeterminateChannel.get());
+            DictionaryBlock inputDataBlock = (DictionaryBlock) page.getBlock(channels[0]);
+
+            verify(inputHashBlock instanceof DictionaryBlock, "data channel is dictionary encoded but indeterminate channel is not");
+            verify(((DictionaryBlock) inputHashBlock).getDictionarySourceId().equals(inputDataBlock.getDictionarySourceId()),
+                    "dictionarySourceIds of data block and indeterminate block do not match");
         }
         return processDictionary;
     }

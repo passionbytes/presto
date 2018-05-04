@@ -274,6 +274,7 @@ public class UnaliasSymbolReferences
                     outputs.build(),
                     canonicalize(node.getPartitioningScheme().getHashColumn()),
                     node.getPartitioningScheme().isReplicateNullsAndAny(),
+                    node.getPartitioningScheme().getNullColumn(),
                     node.getPartitioningScheme().getBucketToPartition());
 
             return new ExchangeNode(node.getId(), node.getType(), node.getScope(), partitioningScheme, sources, inputs);
@@ -499,7 +500,8 @@ public class UnaliasSymbolReferences
                     canonicalize(node.getSemiJoinOutput()),
                     canonicalize(node.getSourceHashSymbol()),
                     canonicalize(node.getFilteringSourceHashSymbol()),
-                    node.getDistributionType());
+                    node.getDistributionType(),
+                    canonicalize(node.getFilteringSourceNullSymbol()));
         }
 
         @Override
@@ -733,6 +735,7 @@ public class UnaliasSymbolReferences
                     outputs.build(),
                     canonicalize(scheme.getHashColumn()),
                     scheme.isReplicateNullsAndAny(),
+                    scheme.getNullColumn(),
                     scheme.getBucketToPartition());
         }
     }

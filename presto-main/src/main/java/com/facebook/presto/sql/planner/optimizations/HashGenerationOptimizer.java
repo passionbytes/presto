@@ -390,7 +390,8 @@ public class HashGenerationOptimizer
                             node.getSemiJoinOutput(),
                             Optional.of(sourceHashSymbol),
                             Optional.of(filteringSourceHashSymbol),
-                            node.getDistributionType()),
+                            node.getDistributionType(),
+                            node.getFilteringSourceNullSymbol()),
                     source.getHashSymbols());
         }
 
@@ -497,6 +498,7 @@ public class HashGenerationOptimizer
                             .build(),
                     partitionSymbols.map(newHashSymbols::get),
                     partitioningScheme.isReplicateNullsAndAny(),
+                    partitioningScheme.getNullColumn(),
                     partitioningScheme.getBucketToPartition());
 
             // add hash symbols to sources

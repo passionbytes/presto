@@ -177,6 +177,7 @@ import io.airlift.units.DataSize;
 
 import javax.inject.Inject;
 
+import java.lang.invoke.MethodHandle;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -200,6 +201,7 @@ import static com.facebook.presto.SystemSessionProperties.getTaskWriterCount;
 import static com.facebook.presto.SystemSessionProperties.isExchangeCompressionEnabled;
 import static com.facebook.presto.SystemSessionProperties.isSpillEnabled;
 import static com.facebook.presto.metadata.FunctionKind.SCALAR;
+import static com.facebook.presto.metadata.Signature.internalOperator;
 import static com.facebook.presto.operator.DistinctLimitOperator.DistinctLimitOperatorFactory;
 import static com.facebook.presto.operator.NestedLoopBuildOperator.NestedLoopBuildOperatorFactory;
 import static com.facebook.presto.operator.NestedLoopJoinOperator.NestedLoopJoinOperatorFactory;
@@ -211,7 +213,9 @@ import static com.facebook.presto.operator.TableWriterOperator.TableWriterOperat
 import static com.facebook.presto.operator.UnnestOperator.UnnestOperatorFactory;
 import static com.facebook.presto.operator.WindowFunctionDefinition.window;
 import static com.facebook.presto.spi.StandardErrorCode.COMPILER_ERROR;
+import static com.facebook.presto.spi.function.OperatorType.EQUAL;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
+import static com.facebook.presto.spi.type.BooleanType.BOOLEAN;
 import static com.facebook.presto.spi.type.TypeUtils.writeNativeValue;
 import static com.facebook.presto.sql.analyzer.ExpressionAnalyzer.getExpressionTypes;
 import static com.facebook.presto.sql.analyzer.ExpressionAnalyzer.getExpressionTypesFromInput;
@@ -390,7 +394,12 @@ public class LocalExecutionPlanner
         // partitioningColumns expected to have one column in the normal case, and zero columns when partitioning on a constant
         checkArgument(!partitioningScheme.isReplicateNullsAndAny() || partitioningColumns.size() <= 1);
         if (partitioningScheme.isReplicateNullsAndAny() && partitioningColumns.size() == 1) {
-            nullChannel = OptionalInt.of(outputLayout.indexOf(getOnlyElement(partitioningColumns)));
+            if (partitioningScheme.getNullColumn().isPresent()) {
+                nullChannel = OptionalInt.of(outputLayout.indexOf(partitioningScheme.getNullColumn().get()));
+            }
+            else {
+                nullChannel = OptionalInt.of(outputLayout.indexOf(getOnlyElement(partitioningColumns)));
+            }
         }
 
         return plan(
@@ -2036,13 +2045,29 @@ public class LocalExecutionPlanner
             int probeChannel = probeSource.getLayout().get(node.getSourceJoinSymbol());
             int buildChannel = buildSource.getLayout().get(node.getFilteringSourceJoinSymbol());
 
+            Type buildType = buildSource.getTypes().get(buildChannel);
+            Signature signature = internalOperator(
+                    EQUAL.name(),
+                    BOOLEAN.getTypeSignature(),
+                    ImmutableList.of(buildType.getTypeSignature(), buildType.getTypeSignature()));
+
+            Optional<Integer> nullChannel = Optional.empty();
+            Optional<MethodHandle> equalFunction = Optional.empty();
+            checkState(node.getFilteringSourceNullSymbol().isPresent(), "nullChannel in SemiJoin is not present");
+            if (!node.getFilteringSourceNullSymbol().get().equals(node.getFilteringSourceJoinSymbol())) {
+                nullChannel = node.getFilteringSourceNullSymbol().map(channelGetter(buildSource));
+                equalFunction = Optional.of(metadata.getFunctionRegistry().getScalarFunctionImplementation(signature).getMethodHandle());
+            }
+
             Optional<Integer> buildHashChannel = node.getFilteringSourceHashSymbol().map(channelGetter(buildSource));
 
             SetBuilderOperatorFactory setBuilderOperatorFactory = new SetBuilderOperatorFactory(
                     buildContext.getNextOperatorId(),
                     node.getId(),
-                    buildSource.getTypes().get(buildChannel),
+                    buildType,
                     buildChannel,
+                    equalFunction,
+                    nullChannel,
                     buildHashChannel,
                     10_000,
                     joinCompiler);

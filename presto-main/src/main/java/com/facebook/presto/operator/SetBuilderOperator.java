@@ -28,6 +28,8 @@ import com.google.common.util.concurrent.SettableFuture;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.ThreadSafe;
 
+import java.lang.invoke.MethodHandle;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -73,6 +75,8 @@ public class SetBuilderOperator
         private final Optional<Integer> hashChannel;
         private final SetSupplier setProvider;
         private final int setChannel;
+        private final Optional<MethodHandle> equalFunction;
+        private final Optional<Integer> nullChannel;
         private final int expectedPositions;
         private boolean closed;
         private final JoinCompiler joinCompiler;
@@ -82,6 +86,8 @@ public class SetBuilderOperator
                 PlanNodeId planNodeId,
                 Type type,
                 int setChannel,
+                Optional<MethodHandle> equalFunction,
+                Optional<Integer> nullChannel,
                 Optional<Integer> hashChannel,
                 int expectedPositions,
                 JoinCompiler joinCompiler)
@@ -91,6 +97,8 @@ public class SetBuilderOperator
             Preconditions.checkArgument(setChannel >= 0, "setChannel is negative");
             this.setProvider = new SetSupplier(requireNonNull(type, "type is null"));
             this.setChannel = setChannel;
+            this.nullChannel = requireNonNull(nullChannel, "nullChannel is null");
+            this.equalFunction = requireNonNull(equalFunction, "equalFunction is null");
             this.hashChannel = requireNonNull(hashChannel, "hashChannel is null");
             this.expectedPositions = expectedPositions;
             this.joinCompiler = requireNonNull(joinCompiler, "joinCompiler is null");
@@ -112,7 +120,7 @@ public class SetBuilderOperator
         {
             checkState(!closed, "Factory is already closed");
             OperatorContext operatorContext = driverContext.addOperatorContext(operatorId, planNodeId, SetBuilderOperator.class.getSimpleName());
-            return new SetBuilderOperator(operatorContext, setProvider, setChannel, hashChannel, expectedPositions, joinCompiler);
+            return new SetBuilderOperator(operatorContext, setProvider, setChannel, hashChannel, nullChannel, equalFunction, expectedPositions, joinCompiler);
         }
 
         @Override
@@ -124,13 +132,14 @@ public class SetBuilderOperator
         @Override
         public OperatorFactory duplicate()
         {
-            return new SetBuilderOperatorFactory(operatorId, planNodeId, setProvider.getType(), setChannel, hashChannel, expectedPositions, joinCompiler);
+            return new SetBuilderOperatorFactory(operatorId, planNodeId, setProvider.getType(), setChannel, equalFunction, nullChannel, hashChannel, expectedPositions, joinCompiler);
         }
     }
 
     private final OperatorContext operatorContext;
     private final SetSupplier setSupplier;
     private final int setChannel;
+    private final Optional<Integer> nullChannel;
     private final Optional<Integer> hashChannel;
 
     private final ChannelSetBuilder channelSetBuilder;
@@ -145,6 +154,8 @@ public class SetBuilderOperator
             SetSupplier setSupplier,
             int setChannel,
             Optional<Integer> hashChannel,
+            Optional<Integer> nullChannel,
+            Optional<MethodHandle> equalFunction,
             int expectedPositions,
             JoinCompiler joinCompiler)
     {
@@ -152,12 +163,25 @@ public class SetBuilderOperator
         this.setSupplier = requireNonNull(setSupplier, "setProvider is null");
         this.setChannel = setChannel;
 
+        this.nullChannel = requireNonNull(nullChannel, "nullChannel is null");
         this.hashChannel = requireNonNull(hashChannel, "hashChannel is null");
-        // Set builder is has a single channel which goes in channel 0, if hash is present, add a hachBlock to channel 1
-        Optional<Integer> channelSetHashChannel = hashChannel.isPresent() ? Optional.of(1) : Optional.empty();
+
+        requireNonNull(equalFunction, "equalFunction is null");
+
+        // Set builder is has a single channel which goes in channel 0
+        int position = 0;
+
+        // If null channel is present, then it goes channel 1
+        Optional<Integer> indeterminateChannel = nullChannel.isPresent() ? Optional.of(++position) : Optional.empty();
+
+        // Hashblock goes to the last channel
+        Optional<Integer> channelSetHashChannel = hashChannel.isPresent() ? Optional.of(++position) : Optional.empty();
+
         this.channelSetBuilder = new ChannelSetBuilder(
                 setSupplier.getType(),
                 channelSetHashChannel,
+                indeterminateChannel,
+                equalFunction,
                 expectedPositions,
                 requireNonNull(operatorContext, "operatorContext is null"),
                 requireNonNull(joinCompiler, "joinCompiler is null"));
@@ -210,8 +234,11 @@ public class SetBuilderOperator
         checkState(!isFinished(), "Operator is already finished");
 
         Block sourceBlock = page.getBlock(setChannel);
-        Page sourcePage = hashChannel.isPresent() ? new Page(sourceBlock, page.getBlock(hashChannel.get())) : new Page(sourceBlock);
-
+        List<Block> blocks = new ArrayList<>();
+        blocks.add(sourceBlock);
+        nullChannel.ifPresent(channel -> blocks.add(page.getBlock(channel)));
+        hashChannel.ifPresent(channel -> blocks.add(page.getBlock(channel)));
+        Page sourcePage = new Page(blocks.toArray(new Block[0]));
         unfinishedWork = channelSetBuilder.addPage(sourcePage);
         processUnfinishedWork();
     }

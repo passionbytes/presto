@@ -150,6 +150,7 @@ public class PruneUnreferencedOutputs
                     newOutputSymbols,
                     node.getPartitioningScheme().getHashColumn(),
                     node.getPartitioningScheme().isReplicateNullsAndAny(),
+                    node.getPartitioningScheme().getNullColumn(),
                     node.getPartitioningScheme().getBucketToPartition());
 
             ImmutableList.Builder<PlanNode> rewrittenSources = ImmutableList.builder();
@@ -236,6 +237,9 @@ public class PruneUnreferencedOutputs
             if (node.getFilteringSourceHashSymbol().isPresent()) {
                 filteringSourceInputBuilder.add(node.getFilteringSourceHashSymbol().get());
             }
+            if (node.getFilteringSourceNullSymbol().isPresent()) {
+                filteringSourceInputBuilder.add(node.getFilteringSourceNullSymbol().get());
+            }
             Set<Symbol> filteringSourceInputs = filteringSourceInputBuilder.build();
 
             PlanNode source = context.rewrite(node.getSource(), sourceInputs);
@@ -249,7 +253,8 @@ public class PruneUnreferencedOutputs
                     node.getSemiJoinOutput(),
                     node.getSourceHashSymbol(),
                     node.getFilteringSourceHashSymbol(),
-                    node.getDistributionType());
+                    node.getDistributionType(),
+                    node.getFilteringSourceNullSymbol());
         }
 
         @Override
