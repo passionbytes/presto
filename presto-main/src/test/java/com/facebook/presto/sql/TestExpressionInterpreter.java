@@ -457,7 +457,7 @@ public class TestExpressionInterpreter
 //        assertOptimizedEquals("ARRAY[1] IN (null)", "null");
         assertOptimizedEquals("ARRAY[1] IN (null, ARRAY[1])", "true");
         assertOptimizedEquals("ARRAY[1, 2, null] IN (ARRAY[2, null], ARRAY[1, null])", "false");
-//        assertOptimizedEquals("ARRAY[1, null] IN (ARRAY[2, null], null)", "false");
+//        assertOptimizedEquals("ARRAY[1, null] IN (ARRAY[2, null], null)", "null");
 //        assertOptimizedEquals("ARRAY[null] IN (ARRAY[null])", "null");
 //        assertOptimizedEquals("ARRAY[1] IN (ARRAY[null])", "null");
 //        assertOptimizedEquals("ARRAY[null] IN (ARRAY[1])", "null");
@@ -471,7 +471,7 @@ public class TestExpressionInterpreter
         assertOptimizedEquals("ROW(1) IN (ROW(2), ROW(1), ROW(2))", "true");
 //        assertOptimizedEquals("ROW(1) IN (null)", "null");
 //        assertOptimizedEquals("ROW(1) IN (null, ROW(1))", "true");
-//        assertOptimizedEquals("ROW(1, null) IN (ROW(2, null), null)", "false");
+//        assertOptimizedEquals("ROW(1, null) IN (ROW(2, null), null)", "null");
 //        assertOptimizedEquals("ROW(null) IN (ROW(null))", "null");
 //        assertOptimizedEquals("ROW(1) IN (ROW(null))", "null");
 //        assertOptimizedEquals("ROW(null) IN (ROW(1))", "null");
@@ -480,12 +480,11 @@ public class TestExpressionInterpreter
 //        assertOptimizedEquals("ROW(1, null) IN (ROW(1, null), ROW(2, null))", "false");
 //        assertOptimizedEquals("ROW(1, null) IN (ROW(1, null), ROW(2, null), ROW(1, null))", "false");
 
-
         assertOptimizedEquals("MAP(ARRAY[1], ARRAY[1]) IN (MAP(ARRAY[1], ARRAY[1]))", "true");
 //        assertOptimizedEquals("MAP(ARRAY[1], ARRAY[1]) IN (null)", "null");
         assertOptimizedEquals("MAP(ARRAY[1], ARRAY[1]) IN (null, MAP(ARRAY[1], ARRAY[1]))", "true");
         assertOptimizedEquals("MAP(ARRAY[1], ARRAY[1]) IN (MAP(ARRAY[1, 2], ARRAY[1, null]))", "false");
-//        assertOptimizedEquals("MAP(ARRAY[1, 2], ARRAY[1, null]) IN (MAP(ARRAY[1, 2], ARRAY[2, null]), null)", "false");
+//        assertOptimizedEquals("MAP(ARRAY[1, 2], ARRAY[1, null]) IN (MAP(ARRAY[1, 2], ARRAY[2, null]), null)", "null");
 //        assertOptimizedEquals("MAP(ARRAY[1, 2], ARRAY[1, null]) IN (MAP(ARRAY[1, 2], ARRAY[1, null]))", "null");
 //        assertOptimizedEquals("MAP(ARRAY[1, 2], ARRAY[1, null]) IN (MAP(ARRAY[1, 3], ARRAY[1, null]))", "null");
 //        assertOptimizedEquals("MAP(ARRAY[1], ARRAY[null]) IN (MAP(ARRAY[1], ARRAY[null]))", "null");
