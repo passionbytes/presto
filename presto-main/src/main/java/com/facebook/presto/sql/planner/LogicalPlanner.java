@@ -15,22 +15,30 @@ package com.facebook.presto.sql.planner;
 
 import com.facebook.presto.Session;
 import com.facebook.presto.connector.ConnectorId;
+import com.facebook.presto.metadata.FunctionRegistry;
 import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.metadata.NewTableLayout;
 import com.facebook.presto.metadata.QualifiedObjectName;
+import com.facebook.presto.metadata.Signature;
 import com.facebook.presto.metadata.TableMetadata;
 import com.facebook.presto.spi.ColumnHandle;
 import com.facebook.presto.spi.ColumnMetadata;
 import com.facebook.presto.spi.ConnectorTableMetadata;
 import com.facebook.presto.spi.PrestoException;
+import com.facebook.presto.spi.statistics.ColumnStatisticMetadata;
+import com.facebook.presto.spi.statistics.ColumnStatisticType;
+import com.facebook.presto.spi.statistics.TableStatisticsMetadata;
+import com.facebook.presto.spi.type.StandardTypes;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.sql.analyzer.Analysis;
 import com.facebook.presto.sql.analyzer.Field;
 import com.facebook.presto.sql.analyzer.RelationId;
 import com.facebook.presto.sql.analyzer.RelationType;
 import com.facebook.presto.sql.analyzer.Scope;
+import com.facebook.presto.sql.analyzer.TypeSignatureProvider;
 import com.facebook.presto.sql.parser.SqlParser;
 import com.facebook.presto.sql.planner.optimizations.PlanOptimizer;
+import com.facebook.presto.sql.planner.plan.AggregationNode.Aggregation;
 import com.facebook.presto.sql.planner.plan.Assignments;
 import com.facebook.presto.sql.planner.plan.DeleteNode;
 import com.facebook.presto.sql.planner.plan.ExplainAnalyzeNode;
@@ -38,6 +46,8 @@ import com.facebook.presto.sql.planner.plan.LimitNode;
 import com.facebook.presto.sql.planner.plan.OutputNode;
 import com.facebook.presto.sql.planner.plan.PlanNode;
 import com.facebook.presto.sql.planner.plan.ProjectNode;
+import com.facebook.presto.sql.planner.plan.StatisticAggregations;
+import com.facebook.presto.sql.planner.plan.StatisticAggregationsDescriptor;
 import com.facebook.presto.sql.planner.plan.TableFinishNode;
 import com.facebook.presto.sql.planner.plan.TableWriterNode;
 import com.facebook.presto.sql.planner.plan.ValuesNode;
@@ -47,38 +57,59 @@ import com.facebook.presto.sql.tree.CreateTableAsSelect;
 import com.facebook.presto.sql.tree.Delete;
 import com.facebook.presto.sql.tree.Explain;
 import com.facebook.presto.sql.tree.Expression;
+import com.facebook.presto.sql.tree.FunctionCall;
+import com.facebook.presto.sql.tree.GenericLiteral;
 import com.facebook.presto.sql.tree.Identifier;
 import com.facebook.presto.sql.tree.Insert;
 import com.facebook.presto.sql.tree.LambdaArgumentDeclaration;
 import com.facebook.presto.sql.tree.LongLiteral;
 import com.facebook.presto.sql.tree.NodeRef;
 import com.facebook.presto.sql.tree.NullLiteral;
+import com.facebook.presto.sql.tree.QualifiedName;
 import com.facebook.presto.sql.tree.Query;
 import com.facebook.presto.sql.tree.Statement;
+import com.facebook.presto.sql.tree.SymbolReference;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 
+import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Optional;
 
+import static com.facebook.presto.metadata.FunctionRegistry.mangleOperatorName;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
+import static com.facebook.presto.spi.function.OperatorType.HASH_CODE;
+import static com.facebook.presto.spi.statistics.TableStatisticType.ROW_COUNT;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
+import static com.facebook.presto.spi.type.BooleanType.BOOLEAN;
+import static com.facebook.presto.spi.type.DoubleType.DOUBLE;
 import static com.facebook.presto.spi.type.VarbinaryType.VARBINARY;
+import static com.facebook.presto.spi.type.Varchars.isVarcharType;
 import static com.facebook.presto.sql.planner.plan.TableWriterNode.CreateName;
 import static com.facebook.presto.sql.planner.plan.TableWriterNode.InsertReference;
 import static com.facebook.presto.sql.planner.plan.TableWriterNode.WriterTarget;
 import static com.facebook.presto.sql.planner.sanity.PlanSanityChecker.DISTRIBUTED_PLAN_SANITY_CHECKER;
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.base.Verify.verify;
 import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.ImmutableMap.toImmutableMap;
+import static com.google.common.collect.Iterables.getOnlyElement;
+import static com.google.common.collect.Streams.zip;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
 public class LogicalPlanner
 {
+    private static final GenericLiteral BIGINT_ONE = new GenericLiteral(StandardTypes.BIGINT, "1");
+    private static final NullLiteral NULL_LITERAL = new NullLiteral();
+
     public enum Stage
     {
         CREATED, OPTIMIZED, OPTIMIZED_AND_VALIDATED
@@ -216,12 +247,15 @@ public class LogicalPlanner
                 .map(ColumnMetadata::getName)
                 .collect(toImmutableList());
 
+        TableStatisticsMetadata statisticsMetadata = metadata.getNewTableStatisticsMetadata(session, destination.getCatalogName(), tableMetadata);
+
         return createTableWriterPlan(
                 analysis,
                 plan,
                 new CreateName(destination.getCatalogName(), tableMetadata, newTableLayout),
                 columnNames,
-                newTableLayout);
+                newTableLayout,
+                statisticsMetadata);
     }
 
     private RelationPlan createInsertPlan(Analysis analysis, Insert insertStatement)
@@ -275,13 +309,15 @@ public class LogicalPlanner
         plan = new RelationPlan(projectNode, scope, projectNode.getOutputSymbols());
 
         Optional<NewTableLayout> newTableLayout = metadata.getInsertLayout(session, insert.getTarget());
+        TableStatisticsMetadata statisticsMetadata = metadata.getInsertIntoTableStatisticsMetadata(session, insert.getTarget());
 
         return createTableWriterPlan(
                 analysis,
                 plan,
                 new InsertReference(insert.getTarget()),
                 visibleTableColumnNames,
-                newTableLayout);
+                newTableLayout,
+                statisticsMetadata);
     }
 
     private RelationPlan createTableWriterPlan(
@@ -289,12 +325,9 @@ public class LogicalPlanner
             RelationPlan plan,
             WriterTarget target,
             List<String> columnNames,
-            Optional<NewTableLayout> writeTableLayout)
+            Optional<NewTableLayout> writeTableLayout,
+            TableStatisticsMetadata statistics)
     {
-        List<Symbol> writerOutputs = ImmutableList.of(
-                symbolAllocator.newSymbol("partialrows", BIGINT),
-                symbolAllocator.newSymbol("fragment", VARBINARY));
-
         PlanNode source = plan.getRoot();
 
         if (!analysis.isCreateTableAsSelectWithData()) {
@@ -325,23 +358,214 @@ public class LogicalPlanner
                     outputLayout));
         }
 
-        PlanNode writerNode = new TableWriterNode(
-                idAllocator.getNextId(),
-                source,
-                target,
-                symbols,
-                columnNames,
-                writerOutputs,
-                partitioningScheme);
+        List<Symbol> writerOutputs = ImmutableList.of(
+                symbolAllocator.newSymbol("partialrows", BIGINT),
+                symbolAllocator.newSymbol("fragment", VARBINARY));
 
-        List<Symbol> outputs = ImmutableList.of(symbolAllocator.newSymbol("rows", BIGINT));
+        List<Symbol> commitOutputs = ImmutableList.of(symbolAllocator.newSymbol("rows", BIGINT));
+
+        if (!statistics.isEmpty()) {
+            verify(columnNames.size() == symbols.size(), "columnNames.size() != symbols.size(): %d != %d", columnNames.size(), symbols.size());
+            Map<String, Symbol> columnToSymbolMap = zip(columnNames.stream(), symbols.stream(), SimpleImmutableEntry::new)
+                    .collect(toImmutableMap(Entry::getKey, Entry::getValue));
+
+            CreateStatisticAggregationsResult result = createStatisticsAggregation(statistics, columnToSymbolMap);
+
+            Map<Symbol, Expression> projections = result.getProjections();
+            Assignments assignments = Assignments.builder()
+                    .putIdentities(source.getOutputSymbols())
+                    .putAll(projections)
+                    .build();
+            ProjectNode projectNode = new ProjectNode(
+                    idAllocator.getNextId(),
+                    source,
+                    assignments);
+
+            StatisticAggregations.Parts aggregations = result.getAggregations().split(symbolAllocator, metadata.getFunctionRegistry());
+
+            StatisticAggregations partialAggregation = aggregations.getPartialAggregation();
+            ImmutableList.Builder<Symbol> writerOutputSymbols = ImmutableList.builder();
+            writerOutputSymbols.addAll(writerOutputs);
+            partialAggregation.getGroupingSets().forEach(writerOutputSymbols::addAll);
+            writerOutputSymbols.addAll(partialAggregation.getAggregations().keySet());
+
+            PlanNode writerNode = new TableWriterNode(
+                    idAllocator.getNextId(),
+                    projectNode,
+                    target,
+                    symbols,
+                    columnNames,
+                    writerOutputSymbols.build(),
+                    partitioningScheme,
+                    Optional.of(partialAggregation));
+
+            TableFinishNode commitNode = new TableFinishNode(
+                    idAllocator.getNextId(),
+                    writerNode,
+                    target,
+                    commitOutputs,
+                    Optional.of(aggregations.getFinalAggregation()),
+                    Optional.of(result.getDescriptor()));
+
+            return new RelationPlan(commitNode, analysis.getRootScope(), commitOutputs);
+        }
+
         TableFinishNode commitNode = new TableFinishNode(
                 idAllocator.getNextId(),
-                writerNode,
+                new TableWriterNode(
+                        idAllocator.getNextId(),
+                        source,
+                        target,
+                        symbols,
+                        columnNames,
+                        writerOutputs,
+                        partitioningScheme,
+                        Optional.empty()),
                 target,
-                outputs);
+                commitOutputs,
+                Optional.empty(),
+                Optional.empty());
+        return new RelationPlan(commitNode, analysis.getRootScope(), commitOutputs);
+    }
 
-        return new RelationPlan(commitNode, analysis.getRootScope(), outputs);
+    private CreateStatisticAggregationsResult createStatisticsAggregation(TableStatisticsMetadata statisticsMetadata, Map<String, Symbol> columnToSymbolMap)
+    {
+        List<List<Symbol>> groupingSets = statisticsMetadata.getGroupingSets().stream()
+                .map(groupingSet -> groupingSet.stream().map(columnToSymbolMap::get).collect(toImmutableList()))
+                .collect(toImmutableList());
+        if (groupingSets.size() > 1) {
+            throw new PrestoException(NOT_SUPPORTED, "Multiple grouping sets are not supported");
+        }
+
+        StatisticAggregationsDescriptor.Builder<Symbol> descriptor = StatisticAggregationsDescriptor.builder();
+
+        List<Symbol> groupingSymbols = getOnlyElement(groupingSets);
+        List<String> groupingColumns = getOnlyElement(statisticsMetadata.getGroupingSets());
+        verify(groupingSymbols.size() == groupingColumns.size());
+        for (int i = 0; i < groupingSymbols.size(); i++) {
+            descriptor.addGrouping(groupingSymbols.get(i), groupingColumns.get(i));
+        }
+
+        ImmutableMap.Builder<Symbol, Aggregation> aggregations = ImmutableMap.builder();
+
+        if (statisticsMetadata.getTableStatistics().size() > 1 || (statisticsMetadata.getTableStatistics().size() == 1 && getOnlyElement(statisticsMetadata.getTableStatistics()) != ROW_COUNT)) {
+            throw new PrestoException(NOT_SUPPORTED, "Table wide statistics other than ROW_COUNT are not supported");
+        }
+
+        FunctionRegistry functionRegistry = metadata.getFunctionRegistry();
+        if (statisticsMetadata.getTableStatistics().size() > 0) {
+            QualifiedName count = QualifiedName.of("count");
+            Aggregation aggregation = new Aggregation(
+                    new FunctionCall(count, ImmutableList.of()),
+                    functionRegistry.resolveFunction(count, ImmutableList.of()),
+                    Optional.empty());
+            Symbol symbol = symbolAllocator.newSymbol("rowCount", BIGINT);
+            aggregations.put(symbol, aggregation);
+            descriptor.addTableStatistic(symbol, ROW_COUNT);
+        }
+
+        ImmutableMap.Builder<Symbol, Expression> projections = ImmutableMap.builder();
+        for (ColumnStatisticMetadata columnStatisticMetadata : statisticsMetadata.getColumnStatistics()) {
+            String columnName = columnStatisticMetadata.getColumnName();
+            ColumnStatisticType statisticType = columnStatisticMetadata.getStatisticType();
+            Symbol inputSymbol = requireNonNull(columnToSymbolMap.get(columnName), "inputSymbol is null");
+            Type inputType = requireNonNull(symbolAllocator.getTypes().get(inputSymbol), "inputType is null");
+            SingleColumnStatisticAggregation aggregation = createColumnAggregation(statisticType, inputSymbol, inputType);
+            Symbol symbol = symbolAllocator.newSymbol(statisticType + "-" + columnName, aggregation.getOutputType());
+            aggregations.put(symbol, aggregation.getAggregation());
+            descriptor.addColumnStatistic(symbol, columnStatisticMetadata);
+            aggregation.getInputProjection().ifPresent(projections::put);
+        }
+
+        StatisticAggregations aggregation = new StatisticAggregations(aggregations.build(), groupingSets);
+        return new CreateStatisticAggregationsResult(aggregation, descriptor.build(), projections.build());
+    }
+
+    private SingleColumnStatisticAggregation createColumnAggregation(ColumnStatisticType statisticType, Symbol input, Type inputType)
+    {
+        switch (statisticType) {
+            case MIN: {
+                checkArgument(inputType.isOrderable(), "Input type is not orderable: %s", inputType);
+                return createAggregation(QualifiedName.of("min"), input.toSymbolReference(), inputType, inputType);
+            }
+            case MAX: {
+                checkArgument(inputType.isOrderable(), "Input type is not orderable: %s", inputType);
+                return createAggregation(QualifiedName.of("max"), input.toSymbolReference(), inputType, inputType);
+            }
+            case NUMBER_OF_DISTINCT_VALUES: {
+                checkArgument(inputType.isComparable(), "Input type is not comparable: %s", inputType);
+                // TODO: IMPLEMENT GENERIC APPROX DISTINCT
+                if (!isApproxDistinctAvailable(inputType)) {
+                    FunctionCall hashCode = new FunctionCall(QualifiedName.of(mangleOperatorName(HASH_CODE)), ImmutableList.of(input.toSymbolReference()));
+                    return createAggregation(QualifiedName.of("approx_distinct"), hashCode, BIGINT, BIGINT);
+                }
+                return createAggregation(QualifiedName.of("approx_distinct"), input.toSymbolReference(), inputType, BIGINT);
+            }
+            case NUMBER_OF_NON_NULL_VALUES: {
+                return createAggregation(QualifiedName.of("count"), input.toSymbolReference(), inputType, BIGINT);
+            }
+            case MAX_VALUE_SIZE_IN_BYTES: {
+                if (!inputType.equals(VARBINARY) && !isVarcharType(inputType)) {
+                    throw new PrestoException(NOT_SUPPORTED, format("Unsupported statistic %s for type: %s", statisticType, inputType));
+                }
+                Expression expression = new FunctionCall(QualifiedName.of("length"), ImmutableList.of(inputType.equals(VARBINARY) ? input.toSymbolReference() : new Cast(input.toSymbolReference(), "VARBINARY")));
+                return createAggregation(QualifiedName.of("max"), expression, BIGINT, BIGINT);
+            }
+            case AVERAGE_VALUE_SIZE_IN_BYTES: {
+                if (!inputType.equals(VARBINARY) && !isVarcharType(inputType)) {
+                    throw new PrestoException(NOT_SUPPORTED, format("Unsupported statistic %s for type: %s", statisticType, inputType));
+                }
+                Expression expression = new FunctionCall(QualifiedName.of("length"), ImmutableList.of(inputType.equals(VARBINARY) ? input.toSymbolReference() : new Cast(input.toSymbolReference(), "VARBINARY")));
+                return createAggregation(QualifiedName.of("avg"), expression, BIGINT, BIGINT);
+            }
+            case NUMBER_OF_TRUE: {
+                checkArgument(BOOLEAN.equals(inputType), "invalid input type %s for statistic type %s", inputType, statisticType);
+                return createAggregation(QualifiedName.of("count_if"), input.toSymbolReference(), BOOLEAN, BIGINT);
+            }
+            default:
+                throw new IllegalArgumentException("Unsupported statisticType: " + statisticType);
+        }
+    }
+
+    private static boolean isApproxDistinctAvailable(Type inputType)
+    {
+        return inputType.equals(BIGINT) || inputType.equals(DOUBLE) || isVarcharType(inputType) || inputType.equals(VARBINARY);
+    }
+
+    private SingleColumnStatisticAggregation createAggregation(QualifiedName functionName, Expression expression, Type inputType, Type outputType)
+    {
+        Signature signature = metadata.getFunctionRegistry().resolveFunction(functionName, TypeSignatureProvider.fromTypes(ImmutableList.of(inputType)));
+        Type resolvedType = metadata.getType(getOnlyElement(signature.getArgumentTypes()));
+        Expression inputExpression;
+        if (!resolvedType.equals(inputType)) {
+            inputExpression = new Cast(
+                    expression,
+                    resolvedType.getTypeSignature().toString(),
+                    false,
+                    metadata.getTypeManager().isTypeOnlyCoercion(inputType, resolvedType));
+        }
+        else {
+            inputExpression = expression;
+        }
+
+        SymbolReference inputSymbolReference;
+        Optional<Entry<Symbol, Expression>> inputProjection;
+        if (inputExpression instanceof SymbolReference) {
+            inputProjection = Optional.empty();
+            inputSymbolReference = (SymbolReference) inputExpression;
+        }
+        else {
+            Symbol inputSymbol = symbolAllocator.newSymbol(inputExpression, resolvedType);
+            inputProjection = Optional.of(new SimpleImmutableEntry<>(inputSymbol, inputExpression));
+            inputSymbolReference = inputSymbol.toSymbolReference();
+        }
+        return new SingleColumnStatisticAggregation(
+                new Aggregation(
+                        new FunctionCall(functionName, ImmutableList.of(inputSymbolReference)),
+                        signature,
+                        Optional.empty()),
+                outputType,
+                inputProjection);
     }
 
     private RelationPlan createDeletePlan(Analysis analysis, Delete node)
@@ -350,7 +574,13 @@ public class LogicalPlanner
                 .plan(node);
 
         List<Symbol> outputs = ImmutableList.of(symbolAllocator.newSymbol("rows", BIGINT));
-        TableFinishNode commitNode = new TableFinishNode(idAllocator.getNextId(), deleteNode, deleteNode.getTarget(), outputs);
+        TableFinishNode commitNode = new TableFinishNode(
+                idAllocator.getNextId(),
+                deleteNode,
+                deleteNode.getTarget(),
+                outputs,
+                Optional.empty(),
+                Optional.empty());
 
         return new RelationPlan(commitNode, analysis.getScope(node), commitNode.getOutputSymbols());
     }
@@ -413,7 +643,7 @@ public class LogicalPlanner
     private static Map<NodeRef<LambdaArgumentDeclaration>, Symbol> buildLambdaDeclarationToSymbolMap(Analysis analysis, SymbolAllocator symbolAllocator)
     {
         Map<NodeRef<LambdaArgumentDeclaration>, Symbol> resultMap = new LinkedHashMap<>();
-        for (Map.Entry<NodeRef<Expression>, Type> entry : analysis.getTypes().entrySet()) {
+        for (Entry<NodeRef<Expression>, Type> entry : analysis.getTypes().entrySet()) {
             if (!(entry.getKey().getNode() instanceof LambdaArgumentDeclaration)) {
                 continue;
             }
@@ -424,5 +654,66 @@ public class LogicalPlanner
             resultMap.put(lambdaArgumentDeclaration, symbolAllocator.newSymbol(lambdaArgumentDeclaration.getNode(), entry.getValue()));
         }
         return resultMap;
+    }
+
+    private static class CreateStatisticAggregationsResult
+    {
+        private final StatisticAggregations aggregations;
+        private final StatisticAggregationsDescriptor<Symbol> descriptor;
+        private final Map<Symbol, Expression> projections;
+
+        private CreateStatisticAggregationsResult(
+                StatisticAggregations aggregations,
+                StatisticAggregationsDescriptor<Symbol> descriptor,
+                Map<Symbol, Expression> projections)
+        {
+            this.aggregations = requireNonNull(aggregations, "statisticAggregations is null");
+            this.descriptor = requireNonNull(descriptor, "descriptor is null");
+            this.projections = ImmutableMap.copyOf(requireNonNull(projections, "projections is null"));
+        }
+
+        public StatisticAggregations getAggregations()
+        {
+            return aggregations;
+        }
+
+        public StatisticAggregationsDescriptor<Symbol> getDescriptor()
+        {
+            return descriptor;
+        }
+
+        public Map<Symbol, Expression> getProjections()
+        {
+            return projections;
+        }
+    }
+
+    private static class SingleColumnStatisticAggregation
+    {
+        private final Aggregation aggregation;
+        private final Type outputType;
+        private final Optional<Entry<Symbol, Expression>> inputProjection;
+
+        private SingleColumnStatisticAggregation(Aggregation aggregation, Type outputType, Optional<Entry<Symbol, Expression>> inputProjection)
+        {
+            this.aggregation = requireNonNull(aggregation, "aggregation is null");
+            this.outputType = requireNonNull(outputType, "outputType is null");
+            this.inputProjection = requireNonNull(inputProjection, "inputProjection is null").map(SimpleImmutableEntry::new);
+        }
+
+        public Aggregation getAggregation()
+        {
+            return aggregation;
+        }
+
+        public Type getOutputType()
+        {
+            return outputType;
+        }
+
+        public Optional<Entry<Symbol, Expression>> getInputProjection()
+        {
+            return inputProjection;
+        }
     }
 }

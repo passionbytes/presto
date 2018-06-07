@@ -37,6 +37,7 @@ import com.facebook.presto.spi.predicate.TupleDomain;
 import com.facebook.presto.spi.security.GrantInfo;
 import com.facebook.presto.spi.security.Privilege;
 import com.facebook.presto.spi.statistics.TableStatistics;
+import com.facebook.presto.spi.statistics.TableStatisticsMetadata;
 import io.airlift.slice.Slice;
 
 import java.util.Collection;
@@ -50,6 +51,7 @@ import java.util.stream.Collectors;
 import static com.facebook.presto.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static com.facebook.presto.spi.statistics.TableStatistics.EMPTY_STATISTICS;
+import static com.facebook.presto.spi.statistics.TableStatisticsMetadata.EMPTY_STATISTICS_METADATA;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.emptyMap;
 import static java.util.stream.Collectors.toList;
@@ -262,6 +264,22 @@ public interface ConnectorMetadata
                 .collect(toList());
 
         return Optional.of(new ConnectorNewTableLayout(partitioningHandle, partitionColumns));
+    }
+
+    /**
+     * Describes statistic that must be collected for a new table
+     */
+    default TableStatisticsMetadata getNewTableStatisticsMetadata(ConnectorSession session, ConnectorTableMetadata tableMetadata)
+    {
+        return EMPTY_STATISTICS_METADATA;
+    }
+
+    /**
+     * Describes statistic that must be collected for an existing table during the INSERT operation
+     */
+    default TableStatisticsMetadata getInsertIntoTableStatisticsMetadata(ConnectorSession session, ConnectorTableHandle tableHandle)
+    {
+        return EMPTY_STATISTICS_METADATA;
     }
 
     /**

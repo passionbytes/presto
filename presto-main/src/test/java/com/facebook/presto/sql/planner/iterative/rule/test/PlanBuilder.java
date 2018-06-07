@@ -408,7 +408,9 @@ public class PlanBuilder
                         .addInputsSet(deleteRowId)
                         .singleDistributionPartitioningScheme(deleteRowId)),
                 deleteHandle,
-                ImmutableList.of(deleteRowId));
+                ImmutableList.of(deleteRowId),
+                Optional.empty(),
+                Optional.empty());
     }
 
     public ExchangeNode gatheringExchange(ExchangeNode.Scope scope, PlanNode child)
@@ -651,6 +653,7 @@ public class PlanBuilder
                 columns,
                 columnNames,
                 ImmutableList.of(symbol("partialrows", BIGINT), symbol("fragment", VARBINARY)),
+                Optional.empty(),
                 Optional.empty());
     }
 
