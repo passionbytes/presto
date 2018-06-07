@@ -152,6 +152,11 @@ public class SemiTransactionalHiveMetastore
         }
     }
 
+    public synchronized boolean supportsColumnStatistics()
+    {
+        return delegate.supportsColumnStatistics();
+    }
+
     public synchronized PartitionStatistics getTableStatistics(String databaseName, String tableName)
     {
         checkReadable();
@@ -1864,7 +1869,8 @@ public class SemiTransactionalHiveMetastore
                 Optional<Path> currentLocation,
                 Optional<List<String>> fileNames,
                 boolean ignoreExisting,
-                PartitionStatistics statistics, PartitionStatistics statisticsUpdate)
+                PartitionStatistics statistics,
+                PartitionStatistics statisticsUpdate)
         {
             this.table = requireNonNull(table, "table is null");
             this.principalPrivileges = requireNonNull(principalPrivileges, "principalPrivileges is null");

@@ -444,7 +444,7 @@ public class InMemoryHiveMetastore
     @Override
     public boolean supportsColumnStatistics()
     {
-        return false;
+        return true;
     }
 
     @Override

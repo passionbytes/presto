@@ -25,11 +25,12 @@ import java.util.OptionalLong;
 
 import static com.fasterxml.jackson.annotation.JsonTypeInfo.Id.CLASS;
 import static com.google.common.base.MoreObjects.toStringHelper;
+import static java.util.Objects.requireNonNull;
 
 public class HiveColumnStatistics
 {
-    private final Optional<?> lowValue;
-    private final Optional<?> highValue;
+    private final Optional<? extends Comparable<?>> lowValue;
+    private final Optional<? extends Comparable<?>> highValue;
     private final OptionalLong maxColumnLength;
     private final OptionalDouble averageColumnLength;
     private final OptionalLong trueCount;
@@ -39,8 +40,8 @@ public class HiveColumnStatistics
 
     @JsonCreator
     public HiveColumnStatistics(
-            @JsonProperty("lowValue") Optional<?> lowValue,
-            @JsonProperty("highValue") Optional<?> highValue,
+            @JsonProperty("lowValue") Optional<? extends Comparable<?>> lowValue,
+            @JsonProperty("highValue") Optional<? extends Comparable<?>> highValue,
             @JsonProperty("maxColumnLength") OptionalLong maxColumnLength,
             @JsonProperty("averageColumnLength") OptionalDouble averageColumnLength,
             @JsonProperty("trueCount") OptionalLong trueCount,
@@ -48,26 +49,26 @@ public class HiveColumnStatistics
             @JsonProperty("nullsCount") OptionalLong nullsCount,
             @JsonProperty("distinctValuesCount") OptionalLong distinctValuesCount)
     {
-        this.lowValue = lowValue;
-        this.highValue = highValue;
-        this.maxColumnLength = maxColumnLength;
-        this.averageColumnLength = averageColumnLength;
-        this.trueCount = trueCount;
-        this.falseCount = falseCount;
-        this.nullsCount = nullsCount;
-        this.distinctValuesCount = distinctValuesCount;
+        this.lowValue = requireNonNull(lowValue, "lowValue is null");
+        this.highValue = requireNonNull(highValue, "highValue is null");
+        this.maxColumnLength = requireNonNull(maxColumnLength, "maxColumnLength is null");
+        this.averageColumnLength = requireNonNull(averageColumnLength, "averageColumnLength is null");
+        this.trueCount = requireNonNull(trueCount, "trueCount is null");
+        this.falseCount = requireNonNull(falseCount, "falseCount is null");
+        this.nullsCount = requireNonNull(nullsCount, "nullsCount is null");
+        this.distinctValuesCount = requireNonNull(distinctValuesCount, "distinctValuesCount is null");
     }
 
     @JsonProperty
     @JsonTypeInfo(use = CLASS, property = "@lowValueClass")
-    public Optional<?> getLowValue()
+    public Optional<? extends Comparable<?>> getLowValue()
     {
         return lowValue;
     }
 
     @JsonProperty
     @JsonTypeInfo(use = CLASS, property = "@highValueClass")
-    public Optional<?> getHighValue()
+    public Optional<? extends Comparable<?>> getHighValue()
     {
         return highValue;
     }
