@@ -475,11 +475,6 @@ public final class ThriftMetastoreUtil
         }
     }
 
-    public static Map<String, String> toStatisticParameters(HiveBasicStatistics statistics)
-    {
-        return updateStatisticParameters(ImmutableMap.of(), statistics);
-    }
-
     public static Map<String, String> updateStatisticParameters(Map<String, String> parameters, HiveBasicStatistics statistics)
     {
         ImmutableMap.Builder<String, String> result = ImmutableMap.builder();
