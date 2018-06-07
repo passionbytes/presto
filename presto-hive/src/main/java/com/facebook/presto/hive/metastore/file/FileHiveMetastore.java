@@ -21,13 +21,13 @@ import com.facebook.presto.hive.HiveClientConfig;
 import com.facebook.presto.hive.HiveHdfsConfiguration;
 import com.facebook.presto.hive.HiveType;
 import com.facebook.presto.hive.PartitionNotFoundException;
+import com.facebook.presto.hive.PartitionStatistics;
 import com.facebook.presto.hive.SchemaAlreadyExistsException;
 import com.facebook.presto.hive.TableAlreadyExistsException;
 import com.facebook.presto.hive.authentication.NoHdfsAuthentication;
 import com.facebook.presto.hive.metastore.Column;
 import com.facebook.presto.hive.metastore.Database;
 import com.facebook.presto.hive.metastore.ExtendedHiveMetastore;
-import com.facebook.presto.hive.metastore.HiveColumnStatistics;
 import com.facebook.presto.hive.metastore.HivePrivilegeInfo;
 import com.facebook.presto.hive.metastore.Partition;
 import com.facebook.presto.hive.metastore.PrincipalPrivileges;
@@ -56,6 +56,7 @@ import javax.inject.Inject;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.AbstractMap;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -79,9 +80,11 @@ import static com.facebook.presto.hive.metastore.MetastoreUtil.makePartName;
 import static com.facebook.presto.hive.metastore.MetastoreUtil.verifyCanDropColumn;
 import static com.facebook.presto.hive.metastore.PrincipalType.ROLE;
 import static com.facebook.presto.hive.metastore.PrincipalType.USER;
+import static com.facebook.presto.hive.metastore.thrift.ThriftMetastoreUtil.getHiveBasicStatistics;
 import static com.facebook.presto.spi.StandardErrorCode.ALREADY_EXISTS;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
 import static org.apache.hadoop.hive.common.FileUtils.unescapePathName;
@@ -270,15 +273,22 @@ public class FileHiveMetastore
     }
 
     @Override
-    public Map<String, HiveColumnStatistics> getTableColumnStatistics(String databaseName, String tableName)
+    public PartitionStatistics getTableStatistics(String databaseName, String tableName)
     {
-        return ImmutableMap.of();
+        Table table = getTable(databaseName, tableName)
+                .orElseThrow(() -> new TableNotFoundException(new SchemaTableName(databaseName, tableName)));
+        return new PartitionStatistics(getHiveBasicStatistics(table.getParameters()), ImmutableMap.of());
     }
 
     @Override
-    public Map<String, Map<String, HiveColumnStatistics>> getPartitionColumnStatistics(String databaseName, String tableName, Set<String> partitionNames)
+    public Map<String, PartitionStatistics> getPartitionStatistics(String databaseName, String tableName, Set<String> partitionNames)
     {
-        return ImmutableMap.of();
+        return getPartitionsByNames(databaseName, tableName, ImmutableList.copyOf(partitionNames))
+                .entrySet()
+                .stream()
+                .map(entry -> new AbstractMap.SimpleImmutableEntry<>(entry.getKey(), entry.getValue()
+                        .orElseThrow(() -> new PartitionNotFoundException(new SchemaTableName(databaseName, tableName), toPartitionValues(entry.getKey())))))
+                .collect(toImmutableMap(Entry::getKey, entry -> new PartitionStatistics(getHiveBasicStatistics(entry.getValue().getParameters()), ImmutableMap.of())));
     }
 
     private Table getRequiredTable(String databaseName, String tableName)

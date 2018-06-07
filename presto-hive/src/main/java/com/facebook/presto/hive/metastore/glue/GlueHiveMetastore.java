@@ -57,12 +57,12 @@ import com.facebook.presto.hive.HiveType;
 import com.facebook.presto.hive.HiveUtil;
 import com.facebook.presto.hive.HiveWriteUtils;
 import com.facebook.presto.hive.PartitionNotFoundException;
+import com.facebook.presto.hive.PartitionStatistics;
 import com.facebook.presto.hive.SchemaAlreadyExistsException;
 import com.facebook.presto.hive.TableAlreadyExistsException;
 import com.facebook.presto.hive.metastore.Column;
 import com.facebook.presto.hive.metastore.Database;
 import com.facebook.presto.hive.metastore.ExtendedHiveMetastore;
-import com.facebook.presto.hive.metastore.HiveColumnStatistics;
 import com.facebook.presto.hive.metastore.HivePrivilegeInfo;
 import com.facebook.presto.hive.metastore.Partition;
 import com.facebook.presto.hive.metastore.PrincipalPrivileges;
@@ -84,9 +84,11 @@ import org.apache.hadoop.fs.Path;
 
 import javax.inject.Inject;
 
+import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
@@ -98,9 +100,11 @@ import static com.facebook.presto.hive.HiveUtil.toPartitionValues;
 import static com.facebook.presto.hive.metastore.MetastoreUtil.makePartName;
 import static com.facebook.presto.hive.metastore.MetastoreUtil.verifyCanDropColumn;
 import static com.facebook.presto.hive.metastore.glue.GlueExpressionUtil.buildGlueExpression;
+import static com.facebook.presto.hive.metastore.thrift.ThriftMetastoreUtil.getHiveBasicStatistics;
 import static com.facebook.presto.spi.StandardErrorCode.ALREADY_EXISTS;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static com.google.common.base.Strings.isNullOrEmpty;
+import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.UnaryOperator.identity;
 import static java.util.stream.Collectors.toList;
@@ -217,15 +221,22 @@ public class GlueHiveMetastore
     }
 
     @Override
-    public Map<String, HiveColumnStatistics> getTableColumnStatistics(String databaseName, String tableName)
+    public PartitionStatistics getTableStatistics(String databaseName, String tableName)
     {
-        return ImmutableMap.of();
+        Table table = getTable(databaseName, tableName)
+                .orElseThrow(() -> new TableNotFoundException(new SchemaTableName(databaseName, tableName)));
+        return new PartitionStatistics(getHiveBasicStatistics(table.getParameters()), ImmutableMap.of());
     }
 
     @Override
-    public Map<String, Map<String, HiveColumnStatistics>> getPartitionColumnStatistics(String databaseName, String tableName, Set<String> partitionNames)
+    public Map<String, PartitionStatistics> getPartitionStatistics(String databaseName, String tableName, Set<String> partitionNames)
     {
-        return ImmutableMap.of();
+        return getPartitionsByNames(databaseName, tableName, ImmutableList.copyOf(partitionNames))
+                .entrySet()
+                .stream()
+                .map(entry -> new SimpleImmutableEntry<>(entry.getKey(), entry.getValue()
+                        .orElseThrow(() -> new PartitionNotFoundException(new SchemaTableName(databaseName, tableName), toPartitionValues(entry.getKey())))))
+                .collect(toImmutableMap(Entry::getKey, entry -> new PartitionStatistics(getHiveBasicStatistics(entry.getValue().getParameters()), ImmutableMap.of())));
     }
 
     @Override
@@ -598,7 +609,7 @@ public class GlueHiveMetastore
                 .collect(toMap(Partition::getValues, identity()));
 
         ImmutableMap.Builder<String, Optional<Partition>> resultBuilder = ImmutableMap.builder();
-        for (Map.Entry<String, List<String>> entry : partitionNameToPartitionValuesMap.entrySet()) {
+        for (Entry<String, List<String>> entry : partitionNameToPartitionValuesMap.entrySet()) {
             Partition partition = partitionValuesToPartitionMap.get(entry.getValue());
             resultBuilder.put(entry.getKey(), Optional.ofNullable(partition));
         }
