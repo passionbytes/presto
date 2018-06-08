@@ -20,5 +20,5 @@ import java.util.Set;
 
 public interface CollectibleStatisticsProvider
 {
-    Set<ColumnStatisticType> get(Type type);
+    Set<ColumnStatisticType> get(Type type, String enabledStatistics);
 }

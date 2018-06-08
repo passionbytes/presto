@@ -323,7 +323,7 @@ public class MetastoreHiveStatisticsProvider
 
     private boolean isMinMaxSupportedForType(Type type)
     {
-        Set<ColumnStatisticType> statisticTypes = collectibleStatisticsProvider.get(type);
+        Set<ColumnStatisticType> statisticTypes = collectibleStatisticsProvider.get(type, "");
         return statisticTypes.contains(MIN) && statisticTypes.contains(MAX);
     }
 }

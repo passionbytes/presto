@@ -70,6 +70,7 @@ public final class HiveSessionProperties
     private static final String WRITER_SORT_BUFFER_SIZE = "writer_sort_buffer_size";
     private static final String STATISTICS_ENABLED = "statistics_enabled";
     private static final String COLLECT_COLUMN_STATISTICS_ON_WRITE = "collect_column_statistics_on_write";
+    private static final String ENABLED_STATISTIC_TYPES = "enabled_statistic_types";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -257,7 +258,8 @@ public final class HiveSessionProperties
                         hiveClientConfig.getCollectColumnStatisticsOnWrite(),
                         false,
                         value -> CollectColumnStatisticsOnWriteOption.valueOf(((String) value).toUpperCase(ENGLISH)),
-                        CollectColumnStatisticsOnWriteOption::toString));
+                        CollectColumnStatisticsOnWriteOption::toString),
+                stringSessionProperty(ENABLED_STATISTIC_TYPES, "enabled statistic types", "", false));
     }
 
     public List<PropertyMetadata<?>> getSessionProperties()
@@ -441,5 +443,10 @@ public final class HiveSessionProperties
                 hidden,
                 value -> DataSize.valueOf((String) value),
                 DataSize::toString);
+    }
+
+    public static String getEnabledStatisticTypes(ConnectorSession session)
+    {
+        return session.getProperty(ENABLED_STATISTIC_TYPES, String.class);
     }
 }

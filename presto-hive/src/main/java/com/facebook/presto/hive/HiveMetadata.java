@@ -123,6 +123,7 @@ import static com.facebook.presto.hive.HiveErrorCode.HIVE_UNSUPPORTED_FORMAT;
 import static com.facebook.presto.hive.HiveErrorCode.HIVE_WRITER_CLOSE_ERROR;
 import static com.facebook.presto.hive.HivePartitionManager.extractPartitionKeyValues;
 import static com.facebook.presto.hive.HiveSessionProperties.getCollectColumnStatisticsOnWrite;
+import static com.facebook.presto.hive.HiveSessionProperties.getEnabledStatisticTypes;
 import static com.facebook.presto.hive.HiveSessionProperties.getHiveStorageFormat;
 import static com.facebook.presto.hive.HiveSessionProperties.isBucketExecutionEnabled;
 import static com.facebook.presto.hive.HiveSessionProperties.isRespectTableFormat;
@@ -1586,7 +1587,7 @@ public class HiveMetadata
             return EMPTY_STATISTICS_METADATA;
         }
         List<String> partitionedBy = getPartitionedBy(tableMetadata.getProperties());
-        return getTableStatisticsMetadata(tableMetadata.getColumns(), partitionedBy);
+        return getTableStatisticsMetadata(tableMetadata.getColumns(), partitionedBy, getEnabledStatisticTypes(session));
     }
 
     @Override
@@ -1600,7 +1601,7 @@ public class HiveMetadata
             return EMPTY_STATISTICS_METADATA;
         }
         List<String> partitionedBy = getPartitionedBy(tableMetadata.getProperties());
-        return getTableStatisticsMetadata(tableMetadata.getColumns(), partitionedBy == null ? ImmutableList.of() : partitionedBy);
+        return getTableStatisticsMetadata(tableMetadata.getColumns(), partitionedBy == null ? ImmutableList.of() : partitionedBy, getEnabledStatisticTypes(session));
     }
 
     private static boolean isCollectColumnStatisticsOnWriteEnabled(ConnectorSession session, ConnectorTableMetadata tableMetadata)
@@ -1618,21 +1619,21 @@ public class HiveMetadata
         }
     }
 
-    private TableStatisticsMetadata getTableStatisticsMetadata(List<ColumnMetadata> columns, List<String> partitionedBy)
+    private TableStatisticsMetadata getTableStatisticsMetadata(List<ColumnMetadata> columns, List<String> partitionedBy, String enabledStatistics)
     {
         Set<List<String>> groupingSets = ImmutableSet.of(ImmutableList.copyOf(partitionedBy));
         Set<ColumnStatisticMetadata> columnStatistics = columns.stream()
                 .filter(column -> !partitionedBy.contains(column.getName()))
                 .filter(column -> !column.isHidden())
-                .map(this::getColumnStatistics)
+                .map(metadata -> getColumnStatistics(metadata, enabledStatistics))
                 .flatMap(List::stream)
                 .collect(toImmutableSet());
         return new TableStatisticsMetadata(columnStatistics, ImmutableSet.of(), groupingSets);
     }
 
-    private List<ColumnStatisticMetadata> getColumnStatistics(ColumnMetadata columnMetadata)
+    private List<ColumnStatisticMetadata> getColumnStatistics(ColumnMetadata columnMetadata, String enabledStatistics)
     {
-        return getColumnStatistics(columnMetadata.getName(), collectibleStatisticsProvider.get(columnMetadata.getType()));
+        return getColumnStatistics(columnMetadata.getName(), collectibleStatisticsProvider.get(columnMetadata.getType(), enabledStatistics));
     }
 
     private List<ColumnStatisticMetadata> getColumnStatistics(String columnName, Set<ColumnStatisticType> statisticTypes)

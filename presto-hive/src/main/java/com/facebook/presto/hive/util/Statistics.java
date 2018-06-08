@@ -70,8 +70,10 @@ import static com.facebook.presto.spi.type.Varchars.isVarcharType;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
+import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.common.collect.Sets.intersection;
 import static java.lang.Float.floatToRawIntBits;
+import static java.util.Locale.ENGLISH;
 import static java.util.Objects.requireNonNull;
 
 public final class Statistics
@@ -125,6 +127,20 @@ public final class Statistics
             return OptionalDouble.of((sumFirst + sumSecond) / totalRowCount);
         }
         return OptionalDouble.empty();
+    }
+
+    public static Set<ColumnStatisticType> getSupportedStatistics(Type type, String selectedStatistics)
+    {
+        Set<ColumnStatisticType> supportedStatistics = getSupportedStatistics(type);
+        if (selectedStatistics == null || selectedStatistics.isEmpty()) {
+            return supportedStatistics;
+        }
+
+        String searchString = selectedStatistics.toLowerCase(ENGLISH);
+        return supportedStatistics
+                .stream()
+                .filter(statisticType -> searchString.contains(statisticType.name().toLowerCase(ENGLISH)))
+                .collect(toImmutableSet());
     }
 
     public static Set<ColumnStatisticType> getSupportedStatistics(Type type)
