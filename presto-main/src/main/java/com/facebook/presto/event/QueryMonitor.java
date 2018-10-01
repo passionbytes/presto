@@ -15,6 +15,7 @@ package com.facebook.presto.event;
 
 import com.facebook.presto.client.NodeVersion;
 import com.facebook.presto.connector.ConnectorId;
+import com.facebook.presto.cost.PlanNodeStatsEstimate;
 import com.facebook.presto.eventlistener.EventListenerManager;
 import com.facebook.presto.execution.Column;
 import com.facebook.presto.execution.ExecutionFailureInfo;
@@ -62,7 +63,6 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.cost.PlanNodeCostEstimate.UNKNOWN_COST;
-import static com.facebook.presto.cost.PlanNodeStatsEstimate.UNKNOWN_STATS;
 import static com.facebook.presto.sql.planner.planPrinter.PlanPrinter.textDistributedPlan;
 import static java.lang.Math.max;
 import static java.lang.Math.toIntExact;
@@ -204,7 +204,7 @@ public class QueryMonitor
                             queryInfo.getOutputStage().get(),
                             functionRegistry,
                             // Not possible to recompute stats and costs, since transaction is already completed at this moment
-                            (node, sourceStats, lookup, session, types) -> UNKNOWN_STATS,
+                            (node, sourceStats, lookup, session, types) -> PlanNodeStatsEstimate.unknown(),
                             (node, stats, lookup, session, types) -> UNKNOWN_COST,
                             nodeManager,
                             nodeSchedulerConfig,

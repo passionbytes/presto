@@ -128,7 +128,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static com.facebook.presto.cost.PlanNodeCostEstimate.UNKNOWN_COST;
-import static com.facebook.presto.cost.PlanNodeStatsEstimate.UNKNOWN_STATS;
 import static com.facebook.presto.execution.StageInfo.getAllStages;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static com.facebook.presto.sql.planner.SystemPartitioningHandle.SINGLE_DISTRIBUTION;
@@ -1402,7 +1401,7 @@ public class PlanPrinter
 
         private boolean isKnownPlanNodeStatsOrCost(PlanNode node)
         {
-            return !UNKNOWN_STATS.equals(statsProvider.getStats(node))
+            return !statsProvider.getStats(node).isOutputRowCountUnknown()
                     || !UNKNOWN_COST.equals(costProvider.getCumulativeCost(node));
         }
 
