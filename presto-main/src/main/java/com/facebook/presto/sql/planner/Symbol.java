@@ -18,7 +18,8 @@ import com.facebook.presto.sql.tree.SymbolReference;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
-import static com.google.common.base.Preconditions.checkArgument;
+import java.util.Optional;
+
 import static java.util.Objects.requireNonNull;
 
 public class Symbol
@@ -28,8 +29,15 @@ public class Symbol
 
     public static Symbol from(Expression expression)
     {
-        checkArgument(expression instanceof SymbolReference, "Unexpected expression: %s", expression);
-        return new Symbol(((SymbolReference) expression).getName());
+        return optionalFrom(expression).orElseThrow(() -> new IllegalArgumentException("Unexpected expression: %s" + expression));
+    }
+
+    public static Optional<Symbol> optionalFrom(Expression expression)
+    {
+        if (expression instanceof SymbolReference) {
+            return Optional.of(from(expression));
+        }
+        return Optional.empty();
     }
 
     @JsonCreator
