@@ -120,7 +120,7 @@ public class PlanNodeStatsEstimate
 
     public SymbolStatsEstimate getSymbolStatistics(Symbol symbol)
     {
-        return symbolStatistics.getOrDefault(symbol, SymbolStatsEstimate.UNKNOWN_STATS);
+        return symbolStatistics.getOrDefault(symbol, SymbolStatsEstimate.unknown());
     }
 
     public Set<Symbol> getSymbolsWithKnownStatistics()
