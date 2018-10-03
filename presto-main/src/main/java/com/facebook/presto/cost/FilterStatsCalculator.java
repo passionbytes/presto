@@ -49,7 +49,7 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 
 import static com.facebook.presto.cost.ComparisonStatsCalculator.comparisonExpressionToExpressionStats;
-import static com.facebook.presto.cost.ComparisonStatsCalculator.comparisonExpressionToLiteralStats;
+import static com.facebook.presto.cost.ComparisonStatsCalculator.estimateExpressionToLiteralComparison;
 import static com.facebook.presto.cost.PlanNodeStatsEstimateMath.addStatsAndSumDistinctValues;
 import static com.facebook.presto.cost.PlanNodeStatsEstimateMath.differenceInNonRangeStats;
 import static com.facebook.presto.cost.PlanNodeStatsEstimateMath.differenceInStats;
@@ -359,7 +359,7 @@ public class FilterStatsCalculator
 
             if (right instanceof Literal) {
                 OptionalDouble literal = doubleValueFromLiteral(getType(left), (Literal) right);
-                return comparisonExpressionToLiteralStats(input, leftSymbol, leftStats, literal, operator);
+                return estimateExpressionToLiteralComparison(input, leftSymbol, leftStats, literal, operator);
             }
 
             Optional<Symbol> rightSymbol = asSymbol(right);
@@ -375,7 +375,7 @@ public class FilterStatsCalculator
 
             if (isSingleValue(rightStats)) {
                 OptionalDouble value = isNaN(rightStats.getLowValue()) ? OptionalDouble.empty() : OptionalDouble.of(rightStats.getLowValue());
-                return comparisonExpressionToLiteralStats(input, leftSymbol, leftStats, value, operator);
+                return estimateExpressionToLiteralComparison(input, leftSymbol, leftStats, value, operator);
             }
 
             return comparisonExpressionToExpressionStats(input, leftSymbol, leftStats, rightSymbol, rightStats, operator);
