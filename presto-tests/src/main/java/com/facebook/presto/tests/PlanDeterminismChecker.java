@@ -64,7 +64,8 @@ public class PlanDeterminismChecker
         return localQueryRunner.inTransaction(session, transactionSession -> {
             Plan plan = localQueryRunner.createPlan(transactionSession, sql, LogicalPlanner.Stage.OPTIMIZED_AND_VALIDATED, WarningCollector.NOOP);
             return PlanPrinter.textLogicalPlan(
-                    plan.getRoot(),
+                    // TODO:
+                    plan.getRootStage().getPlan(),
                     plan.getTypes(),
                     localQueryRunner.getMetadata().getFunctionRegistry(),
                     plan.getStatsAndCosts(),

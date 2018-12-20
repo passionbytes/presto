@@ -23,7 +23,6 @@ import com.facebook.presto.security.AccessControl;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.sql.parser.SqlParser;
 import com.facebook.presto.sql.planner.LogicalPlanner;
-import com.facebook.presto.sql.planner.NodePartitioningManager;
 import com.facebook.presto.sql.planner.Plan;
 import com.facebook.presto.sql.planner.PlanFragmenter;
 import com.facebook.presto.sql.planner.PlanNodeIdAllocator;
@@ -53,7 +52,6 @@ public class QueryExplainer
     private final List<PlanOptimizer> planOptimizers;
     private final PlanFragmenter planFragmenter;
     private final Metadata metadata;
-    private final NodePartitioningManager nodePartitioningManager;
     private final AccessControl accessControl;
     private final SqlParser sqlParser;
     private final StatsCalculator statsCalculator;
@@ -65,7 +63,6 @@ public class QueryExplainer
             PlanOptimizers planOptimizers,
             PlanFragmenter planFragmenter,
             Metadata metadata,
-            NodePartitioningManager nodePartitioningManager,
             AccessControl accessControl,
             SqlParser sqlParser,
             StatsCalculator statsCalculator,
@@ -76,7 +73,6 @@ public class QueryExplainer
                 planOptimizers.get(),
                 planFragmenter,
                 metadata,
-                nodePartitioningManager,
                 accessControl,
                 sqlParser,
                 statsCalculator,
@@ -88,7 +84,6 @@ public class QueryExplainer
             List<PlanOptimizer> planOptimizers,
             PlanFragmenter planFragmenter,
             Metadata metadata,
-            NodePartitioningManager nodePartitioningManager,
             AccessControl accessControl,
             SqlParser sqlParser,
             StatsCalculator statsCalculator,
@@ -98,7 +93,6 @@ public class QueryExplainer
         this.planOptimizers = requireNonNull(planOptimizers, "planOptimizers is null");
         this.planFragmenter = requireNonNull(planFragmenter, "planFragmenter is null");
         this.metadata = requireNonNull(metadata, "metadata is null");
-        this.nodePartitioningManager = requireNonNull(nodePartitioningManager, "nodePartitioningManager is null");
         this.accessControl = requireNonNull(accessControl, "accessControl is null");
         this.sqlParser = requireNonNull(sqlParser, "sqlParser is null");
         this.statsCalculator = requireNonNull(statsCalculator, "statsCalculator is null");
@@ -122,12 +116,12 @@ public class QueryExplainer
         switch (planType) {
             case LOGICAL:
                 Plan plan = getLogicalPlan(session, statement, parameters, warningCollector);
-                return PlanPrinter.textLogicalPlan(plan.getRoot(), plan.getTypes(), metadata.getFunctionRegistry(), plan.getStatsAndCosts(), session, 0, false);
+                return PlanPrinter.textLogicalPlan(/*TODO*/plan.getRootStage().getPlan(), plan.getTypes(), metadata.getFunctionRegistry(), plan.getStatsAndCosts(), session, 0, false);
             case DISTRIBUTED:
                 SubPlan subPlan = getDistributedPlan(session, statement, parameters, warningCollector);
                 return PlanPrinter.textDistributedPlan(subPlan, metadata.getFunctionRegistry(), session, false);
             case IO:
-                return IOPlanPrinter.textIOPlan(getLogicalPlan(session, statement, parameters, warningCollector).getRoot(), metadata, session);
+                return IOPlanPrinter.textIOPlan(getLogicalPlan(session, statement, parameters, warningCollector).getRootStage()/*TODO*/.getPlan(), metadata, session);
         }
         throw new IllegalArgumentException("Unhandled plan type: " + planType);
     }
@@ -148,7 +142,7 @@ public class QueryExplainer
         switch (planType) {
             case LOGICAL:
                 Plan plan = getLogicalPlan(session, statement, parameters, warningCollector);
-                return PlanPrinter.graphvizLogicalPlan(plan.getRoot(), plan.getTypes());
+                return PlanPrinter.graphvizLogicalPlan(/*TODO*/plan.getRootStage().getPlan(), plan.getTypes());
             case DISTRIBUTED:
                 SubPlan subPlan = getDistributedPlan(session, statement, parameters, warningCollector);
                 return PlanPrinter.graphvizDistributedPlan(subPlan);
@@ -167,7 +161,7 @@ public class QueryExplainer
         switch (planType) {
             case IO:
                 Plan plan = getLogicalPlan(session, statement, parameters, warningCollector);
-                return textIOPlan(plan.getRoot(), metadata, session);
+                return textIOPlan(/*TODO*/plan.getRootStage().getPlan(), metadata, session);
             default:
                 throw new PrestoException(NOT_SUPPORTED, format("Unsupported explain plan type %s for JSON format", planType));
         }
@@ -188,6 +182,6 @@ public class QueryExplainer
     private SubPlan getDistributedPlan(Session session, Statement statement, List<Expression> parameters, WarningCollector warningCollector)
     {
         Plan plan = getLogicalPlan(session, statement, parameters, warningCollector);
-        return planFragmenter.createSubPlans(session, metadata, nodePartitioningManager, plan, false);
+        return planFragmenter.createSubPlans(session, plan, false);
     }
 }

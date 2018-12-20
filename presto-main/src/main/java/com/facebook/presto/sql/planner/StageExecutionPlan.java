@@ -30,17 +30,22 @@ public class StageExecutionPlan
 {
     private final PlanFragment fragment;
     private final Map<PlanNodeId, SplitSource> splitSources;
-    private final List<StageExecutionPlan> subStages;
+    // stages that feed input to this stage
+    private final List<StageExecutionPlan> inputs;
+    // stages that must finish execution before starting this stage
+    private final List<Reference<StageExecutionPlan>> dependencies;
     private final Optional<List<String>> fieldNames;
 
     public StageExecutionPlan(
             PlanFragment fragment,
             Map<PlanNodeId, SplitSource> splitSources,
-            List<StageExecutionPlan> subStages)
+            List<StageExecutionPlan> inputs,
+            List<Reference<StageExecutionPlan>> dependencies)
     {
         this.fragment = requireNonNull(fragment, "fragment is null");
         this.splitSources = requireNonNull(splitSources, "dataSource is null");
-        this.subStages = ImmutableList.copyOf(requireNonNull(subStages, "dependencies is null"));
+        this.inputs = ImmutableList.copyOf(requireNonNull(inputs, "inputs is null"));
+        this.dependencies = ImmutableList.copyOf(requireNonNull(dependencies, "dependencies is null"));
 
         fieldNames = (fragment.getRoot() instanceof OutputNode) ?
                 Optional.of(ImmutableList.copyOf(((OutputNode) fragment.getRoot()).getColumnNames())) :
@@ -63,14 +68,19 @@ public class StageExecutionPlan
         return splitSources;
     }
 
-    public List<StageExecutionPlan> getSubStages()
+    public List<StageExecutionPlan> getInputs()
     {
-        return subStages;
+        return inputs;
+    }
+
+    public List<Reference<StageExecutionPlan>> getDependencies()
+    {
+        return dependencies;
     }
 
     public StageExecutionPlan withBucketToPartition(Optional<int[]> bucketToPartition)
     {
-        return new StageExecutionPlan(fragment.withBucketToPartition(bucketToPartition), splitSources, subStages);
+        return new StageExecutionPlan(fragment.withBucketToPartition(bucketToPartition), splitSources, inputs, dependencies);
     }
 
     @Override
@@ -79,7 +89,8 @@ public class StageExecutionPlan
         return toStringHelper(this)
                 .add("fragment", fragment)
                 .add("splitSources", splitSources)
-                .add("subStages", subStages)
+                .add("inputs", inputs)
+                .add("dependencies", dependencies)
                 .toString();
     }
 }

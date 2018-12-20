@@ -153,7 +153,7 @@ public class TestFilteredAggregations
     private void assertPlanContainsNoFilter(String sql)
     {
         assertFalse(
-                searchFrom(plan(sql, LogicalPlanner.Stage.OPTIMIZED).getRoot())
+                searchFrom(plan(sql, LogicalPlanner.Stage.OPTIMIZED)/*TODO*/.getRootStage().getPlan())
                         .where(isInstanceOfAny(FilterNode.class))
                         .matches(),
                 "Unexpected node for query: " + sql);

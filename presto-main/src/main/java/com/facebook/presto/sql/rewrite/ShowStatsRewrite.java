@@ -77,6 +77,7 @@ import static com.facebook.presto.sql.QueryUtil.simpleQuery;
 import static com.facebook.presto.sql.analyzer.SemanticErrorCode.MISSING_TABLE;
 import static com.facebook.presto.sql.analyzer.SemanticErrorCode.NOT_SUPPORTED;
 import static com.facebook.presto.sql.planner.optimizations.PlanNodeSearcher.searchFrom;
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static java.lang.Math.round;
@@ -144,7 +145,10 @@ public class ShowStatsRewrite
             //  - no having
             //  - no set quantifier
 
-            Optional<FilterNode> filterNode = searchFrom(plan.getRoot())
+            // TODO
+            checkArgument(plan.getRootStage().getDependencies().isEmpty(), "dependencies must be empty");
+
+            Optional<FilterNode> filterNode = searchFrom(plan.getRootStage().getPlan())
                     .where(FilterNode.class::isInstance)
                     .findSingle();
 
@@ -193,7 +197,10 @@ public class ShowStatsRewrite
 
         private Constraint<ColumnHandle> getConstraint(Plan plan)
         {
-            Optional<TableScanNode> scanNode = searchFrom(plan.getRoot())
+            // TODO
+            checkArgument(plan.getRootStage().getDependencies().isEmpty(), "dependencies must be empty");
+
+            Optional<TableScanNode> scanNode = searchFrom(plan.getRootStage().getPlan())
                     .where(TableScanNode.class::isInstance)
                     .findSingle();
 

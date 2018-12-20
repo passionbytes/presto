@@ -289,7 +289,9 @@ public class PlanPrinter
                 ImmutableList.of(plan.getId()),
                 new PartitioningScheme(Partitioning.create(SINGLE_DISTRIBUTION, ImmutableList.of()), plan.getOutputSymbols()),
                 StageExecutionStrategy.ungroupedExecution(),
-                StatsAndCosts.empty());
+                StatsAndCosts.empty(),
+                // TODO
+                ImmutableSet.of());
         return GraphvizPrinter.printLogical(ImmutableList.of(fragment));
     }
 

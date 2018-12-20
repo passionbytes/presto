@@ -354,7 +354,8 @@ public class TestLogicalPlanner
 
     private static int countOfMatchingNodes(Plan plan, Predicate<PlanNode> predicate)
     {
-        return searchFrom(plan.getRoot()).where(predicate).count();
+        // TODO:
+        return searchFrom(plan.getRootStage().getPlan()).where(predicate).count();
     }
 
     @Test
@@ -397,7 +398,7 @@ public class TestLogicalPlanner
     private void assertPlanContainsNoApplyOrAnyJoin(String sql)
     {
         assertFalse(
-                searchFrom(plan(sql, LogicalPlanner.Stage.OPTIMIZED).getRoot())
+                searchFrom(plan(sql, LogicalPlanner.Stage.OPTIMIZED)./*TODO*/getRootStage().getPlan())
                         .where(isInstanceOfAny(ApplyNode.class, JoinNode.class, IndexJoinNode.class, SemiJoinNode.class, LateralJoinNode.class))
                         .matches(),
                 "Unexpected node for query: " + sql);

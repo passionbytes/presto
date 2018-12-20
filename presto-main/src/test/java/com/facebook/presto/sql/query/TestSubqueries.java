@@ -251,14 +251,16 @@ public class TestSubqueries
 
     private static int countFinalAggregationNodes(Plan plan)
     {
-        return searchFrom(plan.getRoot())
+        // TODO:
+        return searchFrom(plan.getRootStage().getPlan())
                 .where(node -> node instanceof AggregationNode && ((AggregationNode) node).getStep() == FINAL)
                 .count();
     }
 
     private static int countSingleStreamingAggregations(Plan plan)
     {
-        return searchFrom(plan.getRoot())
+        // TODO:
+        return searchFrom(plan.getRootStage().getPlan())
                 .where(node -> node instanceof AggregationNode && ((AggregationNode) node).getStep() == SINGLE && ((AggregationNode) node).isStreamable())
                 .count();
     }

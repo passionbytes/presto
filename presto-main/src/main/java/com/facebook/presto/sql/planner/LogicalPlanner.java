@@ -26,10 +26,14 @@ import com.facebook.presto.execution.warnings.WarningCollector;
 import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.metadata.NewTableLayout;
 import com.facebook.presto.metadata.QualifiedObjectName;
+import com.facebook.presto.metadata.TableHandle;
+import com.facebook.presto.metadata.TableLayout;
+import com.facebook.presto.metadata.TableLayoutResult;
 import com.facebook.presto.metadata.TableMetadata;
 import com.facebook.presto.spi.ColumnHandle;
 import com.facebook.presto.spi.ColumnMetadata;
 import com.facebook.presto.spi.ConnectorTableMetadata;
+import com.facebook.presto.spi.Constraint;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.statistics.TableStatisticsMetadata;
 import com.facebook.presto.spi.type.Type;
@@ -43,6 +47,7 @@ import com.facebook.presto.sql.planner.StatisticsAggregationPlanner.TableStatist
 import com.facebook.presto.sql.planner.optimizations.PlanOptimizer;
 import com.facebook.presto.sql.planner.plan.Assignments;
 import com.facebook.presto.sql.planner.plan.DeleteNode;
+import com.facebook.presto.sql.planner.plan.ExchangeNode;
 import com.facebook.presto.sql.planner.plan.ExplainAnalyzeNode;
 import com.facebook.presto.sql.planner.plan.LimitNode;
 import com.facebook.presto.sql.planner.plan.OutputNode;
@@ -50,6 +55,7 @@ import com.facebook.presto.sql.planner.plan.PlanNode;
 import com.facebook.presto.sql.planner.plan.ProjectNode;
 import com.facebook.presto.sql.planner.plan.StatisticAggregations;
 import com.facebook.presto.sql.planner.plan.TableFinishNode;
+import com.facebook.presto.sql.planner.plan.TableScanNode;
 import com.facebook.presto.sql.planner.plan.TableWriterNode;
 import com.facebook.presto.sql.planner.plan.ValuesNode;
 import com.facebook.presto.sql.planner.sanity.PlanSanityChecker;
@@ -66,6 +72,7 @@ import com.facebook.presto.sql.tree.NodeRef;
 import com.facebook.presto.sql.tree.NullLiteral;
 import com.facebook.presto.sql.tree.Query;
 import com.facebook.presto.sql.tree.Statement;
+import com.google.common.base.VerifyException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 
@@ -81,6 +88,9 @@ import static com.facebook.presto.spi.StandardErrorCode.NOT_FOUND;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.VarbinaryType.VARBINARY;
+import static com.facebook.presto.sql.planner.SystemPartitioningHandle.SINGLE_DISTRIBUTION;
+import static com.facebook.presto.sql.planner.plan.ExchangeNode.Scope.REMOTE;
+import static com.facebook.presto.sql.planner.plan.ExchangeNode.Type.GATHER;
 import static com.facebook.presto.sql.planner.plan.TableWriterNode.CreateName;
 import static com.facebook.presto.sql.planner.plan.TableWriterNode.InsertReference;
 import static com.facebook.presto.sql.planner.plan.TableWriterNode.WriterTarget;
@@ -173,7 +183,48 @@ public class LogicalPlanner
         TypeProvider types = symbolAllocator.getTypes();
         StatsProvider statsProvider = new CachingStatsProvider(statsCalculator, session, types);
         CostProvider costProvider = new CachingCostProvider(costCalculator, statsProvider, Optional.empty(), session, types);
-        return new Plan(root, types, StatsAndCosts.create(root, statsProvider, costProvider));
+        return new Plan(new PlanStage(root, ImmutableList.of()), types, StatsAndCosts.create(root, statsProvider, costProvider));
+    }
+
+    public Plan addSimpleDependency(Plan plan)
+    {
+        TableHandle tableHandle = metadata.getTableHandle(session, new QualifiedObjectName("tpch", "sf1", "lineitem"))
+                .orElseThrow(() -> new VerifyException("tpch.sf1.lineitem not found"));
+        Map<String, ColumnHandle> columnHandles = metadata.getColumnHandles(session, tableHandle);
+        List<TableLayoutResult> layouts = metadata.getLayouts(session, tableHandle, Constraint.alwaysTrue(), Optional.of(ImmutableSet.copyOf(columnHandles.values())));
+        verify(layouts.size() == 1);
+        TableLayout layout = layouts.get(0).getLayout();
+        TableMetadata tableMetadata = metadata.getTableMetadata(session, tableHandle);
+        Map<Symbol, ColumnHandle> assignments = tableMetadata.getColumns().stream()
+                .collect(toImmutableMap(
+                        column -> symbolAllocator.newSymbol(column.getName(), column.getType()),
+                        column -> columnHandles.get(column.getName())));
+        TableScanNode scanNode = new TableScanNode(
+                idAllocator.getNextId(),
+                tableHandle,
+                ImmutableList.copyOf(assignments.keySet()),
+                assignments,
+                Optional.of(layout.getHandle()));
+        ExchangeNode exchangeNode = new ExchangeNode(
+                idAllocator.getNextId(),
+                GATHER,
+                REMOTE,
+                new PartitioningScheme(
+                        Partitioning.create(SINGLE_DISTRIBUTION, ImmutableList.of()),
+                        ImmutableList.copyOf(assignments.keySet())),
+                ImmutableList.of(scanNode),
+                ImmutableList.of(ImmutableList.copyOf(assignments.keySet())),
+                Optional.empty());
+        OutputNode outputNode = new OutputNode(
+                idAllocator.getNextId(),
+                exchangeNode,
+                ImmutableList.copyOf(columnHandles.keySet()),
+                ImmutableList.copyOf(assignments.keySet()));
+        PlanStage dependency = new PlanStage(outputNode, ImmutableList.of());
+        return new Plan(
+                new PlanStage(plan.getRootStage().getPlan(), ImmutableList.of(Reference.of(dependency))),
+                symbolAllocator.getTypes(),
+                plan.getStatsAndCosts());
     }
 
     public PlanNode planStatement(Analysis analysis, Statement statement)

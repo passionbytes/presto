@@ -28,6 +28,7 @@ import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.security.AccessControl;
 import com.facebook.presto.sql.planner.Plan;
 import com.facebook.presto.sql.planner.PlanNodeIdAllocator;
+import com.facebook.presto.sql.planner.PlanStage;
 import com.facebook.presto.sql.planner.SymbolAllocator;
 import com.facebook.presto.sql.planner.TypeProvider;
 import com.facebook.presto.sql.planner.assertions.PlanMatchPattern;
@@ -38,6 +39,7 @@ import com.facebook.presto.sql.planner.iterative.Rule;
 import com.facebook.presto.sql.planner.plan.PlanNode;
 import com.facebook.presto.sql.planner.plan.PlanNodeId;
 import com.facebook.presto.transaction.TransactionManager;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 
 import java.util.HashMap;
@@ -152,7 +154,7 @@ public class RuleAssert
         }
 
         inTransaction(session -> {
-            assertPlan(session, metadata, ruleApplication.statsProvider, new Plan(actual, types, StatsAndCosts.empty()), ruleApplication.lookup, pattern);
+            assertPlan(session, metadata, ruleApplication.statsProvider, new Plan(/*TODO*/new PlanStage(actual, ImmutableList.of()), types, StatsAndCosts.empty()), ruleApplication.lookup, pattern);
             return null;
         });
     }

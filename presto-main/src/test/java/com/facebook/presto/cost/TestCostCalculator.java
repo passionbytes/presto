@@ -35,6 +35,7 @@ import com.facebook.presto.sql.analyzer.FeaturesConfig;
 import com.facebook.presto.sql.planner.NodePartitioningManager;
 import com.facebook.presto.sql.planner.Plan;
 import com.facebook.presto.sql.planner.PlanFragmenter;
+import com.facebook.presto.sql.planner.PlanStage;
 import com.facebook.presto.sql.planner.SubPlan;
 import com.facebook.presto.sql.planner.Symbol;
 import com.facebook.presto.sql.planner.TypeProvider;
@@ -117,7 +118,6 @@ public class TestCostCalculator
         TaskCountEstimator taskCountEstimator = new TaskCountEstimator(() -> NUMBER_OF_NODES);
         costCalculatorUsingExchanges = new CostCalculatorUsingExchanges(taskCountEstimator);
         costCalculatorWithEstimatedExchanges = new CostCalculatorWithEstimatedExchanges(costCalculatorUsingExchanges, taskCountEstimator);
-        planFragmenter = new PlanFragmenter(new QueryManagerConfig());
 
         session = testSessionBuilder().setCatalog("tpch").build();
 
@@ -134,6 +134,8 @@ public class TestCostCalculator
                 new NodeSchedulerConfig().setIncludeCoordinator(true),
                 new NodeTaskMap(finalizerService));
         nodePartitioningManager = new NodePartitioningManager(nodeScheduler);
+
+        planFragmenter = new PlanFragmenter(new QueryManagerConfig(), metadata, nodePartitioningManager);
     }
 
     @AfterClass(alwaysRun = true)
@@ -442,7 +444,7 @@ public class TestCostCalculator
                 .collect(ImmutableMap.toImmutableMap(entry -> new Symbol(entry.getKey()), Map.Entry::getValue)));
         StatsProvider statsProvider = new CachingStatsProvider(statsCalculator(stats), session, typeProvider);
         CostProvider costProvider = new TestingCostProvider(costs, costCalculatorUsingExchanges, statsProvider, session, typeProvider);
-        SubPlan subPlan = fragment(new Plan(node, typeProvider, StatsAndCosts.create(node, statsProvider, costProvider)));
+        SubPlan subPlan = fragment(new Plan(/*TODO*/new PlanStage(node, ImmutableList.of()), typeProvider, StatsAndCosts.create(node, statsProvider, costProvider)));
         return new CostAssertionBuilder(subPlan.getFragment().getStatsAndCosts().getCosts().getOrDefault(node.getId(), PlanNodeCostEstimate.unknown()));
     }
 
@@ -566,7 +568,7 @@ public class TestCostCalculator
                 .collect(ImmutableMap.toImmutableMap(entry -> new Symbol(entry.getKey()), Map.Entry::getValue)));
         StatsProvider statsProvider = new CachingStatsProvider(statsCalculator, session, typeProvider);
         CostProvider costProvider = new CachingCostProvider(costCalculatorUsingExchanges, statsProvider, Optional.empty(), session, typeProvider);
-        SubPlan subPlan = fragment(new Plan(node, typeProvider, StatsAndCosts.create(node, statsProvider, costProvider)));
+        SubPlan subPlan = fragment(new Plan(/*TODO*/new PlanStage(node, ImmutableList.of()), typeProvider, StatsAndCosts.create(node, statsProvider, costProvider)));
         return subPlan.getFragment().getStatsAndCosts().getCosts().getOrDefault(node.getId(), PlanNodeCostEstimate.unknown());
     }
 
@@ -706,7 +708,7 @@ public class TestCostCalculator
 
     private SubPlan fragment(Plan plan)
     {
-        return inTransaction(session -> planFragmenter.createSubPlans(session, metadata, nodePartitioningManager, plan, false));
+        return inTransaction(session -> planFragmenter.createSubPlans(session, plan, false));
     }
 
     private <T> T inTransaction(Function<Session, T> transactionSessionConsumer)

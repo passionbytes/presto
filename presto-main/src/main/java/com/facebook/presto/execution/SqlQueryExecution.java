@@ -54,6 +54,7 @@ import com.facebook.presto.sql.planner.Plan;
 import com.facebook.presto.sql.planner.PlanFragmenter;
 import com.facebook.presto.sql.planner.PlanNodeIdAllocator;
 import com.facebook.presto.sql.planner.PlanOptimizers;
+import com.facebook.presto.sql.planner.Reference;
 import com.facebook.presto.sql.planner.StageExecutionPlan;
 import com.facebook.presto.sql.planner.SubPlan;
 import com.facebook.presto.sql.planner.optimizations.PlanOptimizer;
@@ -414,26 +415,43 @@ public class SqlQueryExecution
 
         // plan query
         PlanNodeIdAllocator idAllocator = new PlanNodeIdAllocator();
-        LogicalPlanner logicalPlanner = new LogicalPlanner(stateMachine.getSession(), planOptimizers, idAllocator, metadata, sqlParser, statsCalculator, costCalculator, stateMachine.getWarningCollector());
+        LogicalPlanner logicalPlanner = new LogicalPlanner(
+                stateMachine.getSession(),
+                planOptimizers,
+                idAllocator,
+                metadata,
+                sqlParser,
+                statsCalculator,
+                costCalculator,
+                stateMachine.getWarningCollector());
+
         Plan plan = logicalPlanner.plan(analysis);
+
+        if (false) {
+            plan = logicalPlanner.addSimpleDependency(plan);
+        }
+
         queryPlan.set(plan);
 
         // extract inputs
-        List<Input> inputs = new InputExtractor(metadata, stateMachine.getSession()).extractInputs(plan.getRoot());
+        InputExtractor inputExtractor = new InputExtractor(metadata, stateMachine.getSession());
+        List<Input> inputs = inputExtractor.extractInputs(plan);
         stateMachine.setInputs(inputs);
 
         // extract output
-        Optional<Output> output = new OutputExtractor().extractOutput(plan.getRoot());
+        OutputExtractor outputExtractor = new OutputExtractor();
+        Optional<Output> output = outputExtractor.extractOutput(plan.getRootStage().getPlan());
         stateMachine.setOutput(output);
 
         // fragment the plan
-        SubPlan fragmentedPlan = planFragmenter.createSubPlans(stateMachine.getSession(), metadata, nodePartitioningManager, plan, false);
+        SubPlan subPlan = planFragmenter.createSubPlans(stateMachine.getSession(), plan, false);
 
         // record analysis time
         stateMachine.endAnalysis();
 
         boolean explainAnalyze = analysis.getStatement() instanceof Explain && ((Explain) analysis.getStatement()).isAnalyze();
-        return new PlanRoot(fragmentedPlan, !explainAnalyze, extractConnectors(analysis));
+
+        return new PlanRoot(subPlan, !explainAnalyze, extractConnectors(analysis));
     }
 
     private static Set<ConnectorId> extractConnectors(Analysis analysis)
@@ -522,8 +540,12 @@ public class SqlQueryExecution
             }
         }
 
-        for (StageExecutionPlan stage : plan.getSubStages()) {
+        for (StageExecutionPlan stage : plan.getInputs()) {
             closeSplitSources(stage);
+        }
+
+        for (Reference<StageExecutionPlan> stage : plan.getDependencies()) {
+            closeSplitSources(stage.get());
         }
     }
 

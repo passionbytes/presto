@@ -352,9 +352,8 @@ public abstract class AbstractTestQueryFramework
                 taskCountEstimator).get();
         return new QueryExplainer(
                 optimizers,
-                new PlanFragmenter(new QueryManagerConfig()),
+                new PlanFragmenter(new QueryManagerConfig(), metadata, queryRunner.getNodePartitioningManager()),
                 metadata,
-                queryRunner.getNodePartitioningManager(),
                 queryRunner.getAccessControl(),
                 sqlParser,
                 queryRunner.getStatsCalculator(),

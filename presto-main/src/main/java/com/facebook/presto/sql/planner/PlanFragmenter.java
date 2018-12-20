@@ -48,8 +48,10 @@ import com.google.common.collect.Maps;
 import javax.inject.Inject;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -74,33 +76,83 @@ import static java.util.Objects.requireNonNull;
  */
 public class PlanFragmenter
 {
+    private final Metadata metadata;
+    private final NodePartitioningManager nodePartitioningManager;
+
     @Inject
-    public PlanFragmenter(QueryManagerConfig queryManagerConfig)
+    public PlanFragmenter(QueryManagerConfig queryManagerConfig, Metadata metadata, NodePartitioningManager nodePartitioningManager)
     {
-        // TODO: Remove query_max_stage_count session property and use queryManagerConfig.getMaxStageCount() here
-        this();
+        this.metadata = requireNonNull(metadata, "metadata is null");
+        this.nodePartitioningManager = requireNonNull(nodePartitioningManager, "nodePartitioningManager is null");
     }
 
-    private PlanFragmenter() {}
-
-    public SubPlan createSubPlans(Session session, Metadata metadata, NodePartitioningManager nodePartitioningManager, Plan plan, boolean forceSingleNode)
+    public SubPlan createSubPlans(Session session, Plan plan, boolean forceSingleNode)
     {
         Fragmenter fragmenter = new Fragmenter(session, metadata, plan.getTypes(), plan.getStatsAndCosts());
 
-        FragmentProperties properties = new FragmentProperties(new PartitioningScheme(Partitioning.create(SINGLE_DISTRIBUTION, ImmutableList.of()), plan.getRoot().getOutputSymbols()));
-        if (forceSingleNode || isForceSingleNodeOutput(session)) {
-            properties = properties.setSingleNodeDistribution();
-        }
-        PlanNode root = SimplePlanRewriter.rewriteWith(fragmenter, plan.getRoot(), properties);
-
-        SubPlan subPlan = fragmenter.buildRootFragment(root, properties);
-        subPlan = analyzeGroupedExecution(session, metadata, nodePartitioningManager, subPlan);
-        subPlan = reassignPartitioningHandleIfNecessary(session, metadata, subPlan);
+        SubPlan subPlan = createSubPlan(
+                fragmenter.nextFragmentId(),
+                fragmenter,
+                plan.getRootStage(),
+                createOutputProperties(plan.getRootStage(), forceSingleNode || isForceSingleNodeOutput(session)),
+                session,
+                new HashMap<>());
 
         checkState(!isForceSingleNodeOutput(session) || subPlan.getFragment().getPartitioning().isSingleNode(), "Root of PlanFragment is not single node");
+        // TODO: Remove query_max_stage_count session property and use queryManagerConfig.getMaxStageCount() here
         sanityCheckFragmentedPlan(subPlan, getQueryMaxStageCount(session));
-
         return subPlan;
+    }
+
+    private SubPlan createSubPlan(
+            PlanFragmentId rootFragmentId,
+            Fragmenter fragmenter,
+            PlanStage stage,
+            FragmentProperties properties,
+            Session session,
+            Map<Reference<PlanStage>, Reference<SubPlan>> plansCache)
+    {
+        PlanNode root = SimplePlanRewriter.rewriteWith(fragmenter, stage.getPlan(), properties);
+        SubPlan subPlan = fragmenter.buildFragment(root, properties, rootFragmentId);
+        subPlan = analyzeGroupedExecution(session, subPlan);
+        subPlan = reassignPartitioningHandleIfNecessary(session, subPlan);
+        List<Reference<SubPlan>> dependencies = stage.getDependencies().stream()
+                .map(dependency -> plansCache.computeIfAbsent(
+                        dependency,
+                        key -> Reference.of(createSubPlan(
+                                fragmenter.nextFragmentId(),
+                                fragmenter,
+                                key.get(),
+                                // dependency output should always be single node
+                                createOutputProperties(key.get(), true),
+                                session,
+                                plansCache))))
+                .collect(toImmutableList());
+        return addDependencies(subPlan, dependencies);
+    }
+
+    private static FragmentProperties createOutputProperties(PlanStage stage, boolean singleNode)
+    {
+        FragmentProperties properties = new FragmentProperties(new PartitioningScheme(
+                Partitioning.create(SINGLE_DISTRIBUTION, ImmutableList.of()),
+                stage.getPlan().getOutputSymbols()));
+        if (singleNode) {
+            properties = properties.setSingleNodeDistribution();
+        }
+        return properties;
+    }
+
+    private SubPlan addDependencies(SubPlan plan, List<Reference<SubPlan>> dependencies)
+    {
+        checkArgument(plan.getDependencies().isEmpty(), "plan dependencies must be empty");
+        List<SubPlan> inputs = plan.getInputs();
+        if (inputs.isEmpty()) {
+            return plan.withDependencies(dependencies);
+        }
+        return new SubPlan(
+                plan.getFragment(),
+                inputs.stream().map(input -> addDependencies(input, dependencies)).collect(toImmutableList()),
+                ImmutableList.of());
     }
 
     private void sanityCheckFragmentedPlan(SubPlan subPlan, int maxStageCount)
@@ -116,27 +168,29 @@ public class PlanFragmenter
         }
     }
 
-    private static SubPlan analyzeGroupedExecution(Session session, Metadata metadata, NodePartitioningManager nodePartitioningManager, SubPlan subPlan)
+    private SubPlan analyzeGroupedExecution(Session session, SubPlan subPlan)
     {
+        checkArgument(subPlan.getDependencies().isEmpty(), "dependencies must be empty here");
         PlanFragment fragment = subPlan.getFragment();
         GroupedExecutionProperties properties = fragment.getRoot().accept(new GroupedExecutionTagger(session, metadata, nodePartitioningManager), null);
         if (properties.isSubTreeUseful()) {
             fragment = fragment.withGroupedExecution(properties.getCapableTableScanNodes());
         }
         ImmutableList.Builder<SubPlan> result = ImmutableList.builder();
-        for (SubPlan child : subPlan.getChildren()) {
-            result.add(analyzeGroupedExecution(session, metadata, nodePartitioningManager, child));
+        for (SubPlan child : subPlan.getInputs()) {
+            result.add(analyzeGroupedExecution(session, child));
         }
-        return new SubPlan(fragment, result.build());
+        return new SubPlan(fragment, result.build(), ImmutableList.of());
     }
 
-    private SubPlan reassignPartitioningHandleIfNecessary(Session session, Metadata metadata, SubPlan subPlan)
+    private SubPlan reassignPartitioningHandleIfNecessary(Session session, SubPlan subPlan)
     {
-        return reassignPartitioningHandleIfNecessaryHelper(session, metadata, subPlan, subPlan.getFragment().getPartitioning());
+        return reassignPartitioningHandleIfNecessaryHelper(session, subPlan, subPlan.getFragment().getPartitioning());
     }
 
-    private SubPlan reassignPartitioningHandleIfNecessaryHelper(Session session, Metadata metadata, SubPlan subPlan, PartitioningHandle newOutputPartitioningHandle)
+    private SubPlan reassignPartitioningHandleIfNecessaryHelper(Session session, SubPlan subPlan, PartitioningHandle newOutputPartitioningHandle)
     {
+        checkArgument(subPlan.getDependencies().isEmpty(), "dependencies must be empty here");
         PlanFragment fragment = subPlan.getFragment();
 
         PlanNode newRoot = fragment.getRoot();
@@ -164,25 +218,24 @@ public class PlanFragmenter
                         outputPartitioningScheme.isReplicateNullsAndAny(),
                         outputPartitioningScheme.getBucketToPartition()),
                 fragment.getStageExecutionStrategy(),
-                fragment.getStatsAndCosts());
+                fragment.getStatsAndCosts(),
+                ImmutableSet.of());
 
         ImmutableList.Builder<SubPlan> childrenBuilder = ImmutableList.builder();
-        for (SubPlan child : subPlan.getChildren()) {
-            childrenBuilder.add(reassignPartitioningHandleIfNecessaryHelper(session, metadata, child, fragment.getPartitioning()));
+        for (SubPlan child : subPlan.getInputs()) {
+            childrenBuilder.add(reassignPartitioningHandleIfNecessaryHelper(session, child, fragment.getPartitioning()));
         }
-        return new SubPlan(newFragment, childrenBuilder.build());
+        return new SubPlan(newFragment, childrenBuilder.build(), ImmutableList.of());
     }
 
     private static class Fragmenter
             extends SimplePlanRewriter<FragmentProperties>
     {
-        private static final int ROOT_FRAGMENT_ID = 0;
-
         private final Session session;
         private final Metadata metadata;
         private final TypeProvider types;
         private final StatsAndCosts statsAndCosts;
-        private int nextFragmentId = ROOT_FRAGMENT_ID + 1;
+        private int nextFragmentId;
 
         public Fragmenter(Session session, Metadata metadata, TypeProvider types, StatsAndCosts statsAndCosts)
         {
@@ -190,11 +243,6 @@ public class PlanFragmenter
             this.metadata = requireNonNull(metadata, "metadata is null");
             this.types = requireNonNull(types, "types is null");
             this.statsAndCosts = requireNonNull(statsAndCosts, "statsAndCosts is null");
-        }
-
-        public SubPlan buildRootFragment(PlanNode root, FragmentProperties properties)
-        {
-            return buildFragment(root, properties, new PlanFragmentId(String.valueOf(ROOT_FRAGMENT_ID)));
         }
 
         private PlanFragmentId nextFragmentId()
@@ -218,9 +266,10 @@ public class PlanFragmenter
                     schedulingOrder,
                     properties.getPartitioningScheme(),
                     StageExecutionStrategy.ungroupedExecution(),
-                    statsAndCosts.getForSubplan(root));
+                    statsAndCosts.getForSubplan(root),
+                    ImmutableSet.of());
 
-            return new SubPlan(fragment, properties.getChildren());
+            return new SubPlan(fragment, properties.getChildren(), ImmutableList.of());
         }
 
         @Override
@@ -331,7 +380,6 @@ public class PlanFragmenter
         private final PartitioningScheme partitioningScheme;
 
         private Optional<PartitioningHandle> partitioningHandle = Optional.empty();
-        private boolean needPartitioningHandleReassignment;
         private final Set<PlanNodeId> partitionedSources = new HashSet<>();
 
         public FragmentProperties(PartitioningScheme partitioningScheme)
@@ -390,7 +438,6 @@ public class PlanFragmenter
 
             Optional<PartitioningHandle> commonPartitioning = metadata.getCommonPartitioning(session, currentPartitioning, distribution);
             if (commonPartitioning.isPresent()) {
-                needPartitioningHandleReassignment = true;
                 partitioningHandle = commonPartitioning;
                 return this;
             }
@@ -456,7 +503,6 @@ public class PlanFragmenter
 
             Optional<PartitioningHandle> commonPartitioning = metadata.getCommonPartitioning(session, currentPartitioning, distribution);
             if (commonPartitioning.isPresent()) {
-                needPartitioningHandleReassignment = true;
                 partitioningHandle = commonPartitioning;
                 return this;
             }
@@ -481,11 +527,6 @@ public class PlanFragmenter
         public PartitioningHandle getPartitioningHandle()
         {
             return partitioningHandle.get();
-        }
-
-        public boolean isNeedPartitioningHandleReassignment()
-        {
-            return needPartitioningHandleReassignment;
         }
 
         public Set<PlanNodeId> getPartitionedSources()

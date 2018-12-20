@@ -57,7 +57,7 @@ public class TestUnion
                 LogicalPlanner.Stage.OPTIMIZED_AND_VALIDATED,
                 false);
 
-        List<PlanNode> remotes = searchFrom(plan.getRoot())
+        List<PlanNode> remotes = searchFrom(/*TODO*/ plan.getRootStage().getPlan())
                 .where(TestUnion::isRemoteExchange)
                 .findAll();
 
@@ -79,14 +79,14 @@ public class TestUnion
                 LogicalPlanner.Stage.OPTIMIZED_AND_VALIDATED,
                 false);
 
-        List<PlanNode> remotes = searchFrom(plan.getRoot())
+        List<PlanNode> remotes = searchFrom(/*TODO*/ plan.getRootStage().getPlan())
                 .where(TestUnion::isRemoteExchange)
                 .findAll();
 
         assertEquals(remotes.size(), 1, "There should be exactly one RemoteExchange");
         assertEquals(((ExchangeNode) Iterables.getOnlyElement(remotes)).getType(), GATHER);
 
-        int numberOfpartialTopN = searchFrom(plan.getRoot())
+        int numberOfpartialTopN = searchFrom(/*TODO*/ plan.getRootStage().getPlan())
                 .where(planNode -> planNode instanceof TopNNode && ((TopNNode) planNode).getStep().equals(TopNNode.Step.PARTIAL))
                 .count();
         assertEquals(numberOfpartialTopN, 2, "There should be exactly two partial TopN nodes");
@@ -106,7 +106,7 @@ public class TestUnion
                 LogicalPlanner.Stage.OPTIMIZED_AND_VALIDATED,
                 false);
 
-        List<PlanNode> remotes = searchFrom(plan.getRoot())
+        List<PlanNode> remotes = searchFrom(/*TODO*/ plan.getRootStage().getPlan())
                 .where(TestUnion::isRemoteExchange)
                 .findAll();
 
@@ -162,7 +162,7 @@ public class TestUnion
 
     private void assertPlanIsFullyDistributed(Plan plan)
     {
-        int numberOfGathers = searchFrom(plan.getRoot())
+        int numberOfGathers = searchFrom(/*TODO*/ plan.getRootStage().getPlan())
                 .where(TestUnion::isRemoteGatheringExchange)
                 .findAll()
                 .size();
@@ -173,7 +173,7 @@ public class TestUnion
         }
 
         assertTrue(
-                searchFrom(plan.getRoot())
+                searchFrom(/*TODO*/ plan.getRootStage().getPlan())
                         .recurseOnlyWhen(TestUnion::isNotRemoteGatheringExchange)
                         .findAll()
                         .stream()
@@ -200,7 +200,7 @@ public class TestUnion
 
     private static void assertAtMostOneAggregationBetweenRemoteExchanges(Plan plan)
     {
-        List<PlanNode> fragments = searchFrom(plan.getRoot())
+        List<PlanNode> fragments = searchFrom(/*TODO*/ plan.getRootStage().getPlan())
                 .where(TestUnion::isRemoteExchange)
                 .findAll()
                 .stream()

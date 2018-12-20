@@ -167,6 +167,11 @@ public class LazyOutputBuffer
                     case ARBITRARY:
                         delegate = new ArbitraryOutputBuffer(taskInstanceId, state, maxBufferSize, systemMemoryContextSupplier, executor);
                         break;
+                    case DISCARDING:
+                        delegate = new DiscardingOutputBuffer(newOutputBuffers, state);
+                        break;
+                    default:
+                        throw new IllegalArgumentException("Unexpected buffer type: " + newOutputBuffers.getType());
                 }
 
                 // process pending aborts and reads outside of synchronized lock
