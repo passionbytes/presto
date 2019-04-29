@@ -306,7 +306,7 @@ public class TestStageStateMachine
         assertEquals(stageInfo.getState(), expectedState);
 
         if (expectedState == StageState.FAILED) {
-            ExecutionFailureInfo failure = stageInfo.getFailureCause();
+            ExecutionFailureInfo failure = stageInfo.getFailureCause().get();
             assertEquals(failure.getMessage(), FAILED_CAUSE.getMessage());
             assertEquals(failure.getType(), FAILED_CAUSE.getClass().getName());
         }
