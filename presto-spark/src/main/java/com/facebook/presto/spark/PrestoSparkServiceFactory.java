@@ -31,11 +31,12 @@ public class PrestoSparkServiceFactory
     {
         System.setProperty("config", configuration.getConfigFilePath());
 
-        PrestoSparkInjectorFactory prestoSparkInjectorFactory = new PrestoSparkInjectorFactory(
-                ImmutableMap.of(
-                        "plugin.dir", configuration.getPluginsDirectoryPath(),
-                        "plugin.config-dir", configuration.getPluginsConfigDirectoryPath()),
-                ImmutableList.of());
+        ImmutableMap.Builder<String, String> properties = ImmutableMap.builder();
+        properties.put("plugin.dir", configuration.getPluginsDirectoryPath());
+        properties.put("plugin.config-dir", configuration.getPluginsConfigDirectoryPath());
+        properties.putAll(configuration.getExtraProperties());
+
+        PrestoSparkInjectorFactory prestoSparkInjectorFactory = new PrestoSparkInjectorFactory(properties.build(), ImmutableList.of());
 
         Injector injector = prestoSparkInjectorFactory.create();
         PrestoSparkService prestoSparkService = injector.getInstance(PrestoSparkService.class);

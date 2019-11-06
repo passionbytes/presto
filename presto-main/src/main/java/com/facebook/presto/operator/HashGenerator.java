@@ -15,6 +15,10 @@ package com.facebook.presto.operator;
 
 import com.facebook.presto.spi.Page;
 
+import java.security.SecureRandom;
+import java.util.Arrays;
+import java.util.concurrent.ThreadLocalRandom;
+
 public interface HashGenerator
 {
     long hashPosition(int position, Page page);
@@ -26,5 +30,22 @@ public interface HashGenerator
         // This function reduces the 64 bit rawHash to [0, partitionCount) uniformly. It first reduces the rawHash to 32 bit
         // integer x then normalize it to x / 2^32 * partitionCount to reduce the range of x from [0, 2^32) to [0, partitionCount)
         return (int) ((Integer.toUnsignedLong(Long.hashCode(rawHash)) * partitionCount) >> 32);
+    }
+
+    public static void main(String[] args)
+    {
+        SecureRandom secureRandom = new SecureRandom();
+        int partitionCount = 512;
+        int[] values = new int[partitionCount];
+        for (int i = 0; i < 1000; i++) {
+            long rawHash = secureRandom.nextLong();
+            int uniformHash = (int) ((Integer.toUnsignedLong(Long.hashCode(rawHash)) * partitionCount) >> 32);
+//            values[uniformHash % partitionCount]++;
+//            values[(int) ((rawHash & 0x7fff_ffff_ffff_ffffL) % partitionCount)]++;
+
+            values[secureRandom.nextInt(partitionCount)]++;
+        }
+        Arrays.sort(values);
+        System.out.println(Arrays.toString(values));
     }
 }

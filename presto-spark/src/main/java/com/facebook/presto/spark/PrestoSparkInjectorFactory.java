@@ -15,12 +15,20 @@ package com.facebook.presto.spark;
 
 import com.facebook.airlift.bootstrap.Bootstrap;
 import com.facebook.airlift.json.JsonModule;
+import com.facebook.presto.eventlistener.EventListenerManager;
 import com.facebook.presto.eventlistener.EventListenerModule;
+import com.facebook.presto.execution.resourceGroups.ResourceGroupManager;
+import com.facebook.presto.metadata.StaticCatalogStore;
+import com.facebook.presto.metadata.StaticFunctionNamespaceStore;
+import com.facebook.presto.security.AccessControlManager;
 import com.facebook.presto.security.AccessControlModule;
+import com.facebook.presto.server.PluginManager;
+import com.facebook.presto.server.SessionPropertyDefaults;
+import com.facebook.presto.server.security.PasswordAuthenticatorManager;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.inject.Injector;
 import com.google.inject.Module;
-import org.spark_project.guava.collect.ImmutableMap;
 
 import java.util.List;
 import java.util.Map;
@@ -55,8 +63,28 @@ public class PrestoSparkInjectorFactory
         modules.addAll(additionalModules);
 
         Bootstrap app = new Bootstrap(modules.build());
+
+        // Stream redirect doesn't work well with spark logging
+        app.doNotInitializeLogging();
+
         app.setRequiredConfigurationProperties(properties);
 
-        return app.strictConfig().initialize();
+        Injector injector = app.strictConfig().initialize();
+
+        try {
+            injector.getInstance(PluginManager.class).loadPlugins();
+            injector.getInstance(StaticCatalogStore.class).loadCatalogs();
+            injector.getInstance(StaticFunctionNamespaceStore.class).loadFunctionNamespaceManagers();
+            injector.getInstance(SessionPropertyDefaults.class).loadConfigurationManager();
+            injector.getInstance(ResourceGroupManager.class).loadConfigurationManager();
+            injector.getInstance(AccessControlManager.class).loadSystemAccessControl();
+            injector.getInstance(PasswordAuthenticatorManager.class).loadPasswordAuthenticator();
+            injector.getInstance(EventListenerManager.class).loadConfiguredEventListener();
+        }
+        catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        return injector;
     }
 }

@@ -57,6 +57,8 @@ import com.facebook.presto.metadata.SchemaPropertyManager;
 import com.facebook.presto.metadata.SessionPropertyManager;
 import com.facebook.presto.metadata.StaticCatalogStore;
 import com.facebook.presto.metadata.StaticCatalogStoreConfig;
+import com.facebook.presto.metadata.StaticFunctionNamespaceStore;
+import com.facebook.presto.metadata.StaticFunctionNamespaceStoreConfig;
 import com.facebook.presto.metadata.TablePropertyManager;
 import com.facebook.presto.metadata.ViewDefinition;
 import com.facebook.presto.operator.LookupJoinOperators;
@@ -175,6 +177,7 @@ public class PrestoSparkModule
         configBinder(binder).bindConfig(NodeSpillConfig.class);
         configBinder(binder).bindConfig(CompilerConfig.class);
         configBinder(binder).bindConfig(SqlEnvironmentConfig.class);
+        configBinder(binder).bindConfig(StaticFunctionNamespaceStoreConfig.class);
 
         // json codecs
         jsonCodecBinder(binder).bindJsonCodec(ViewDefinition.class);
@@ -225,6 +228,7 @@ public class PrestoSparkModule
         binder.bind(FunctionManager.class).in(Scopes.SINGLETON);
         binder.bind(MetadataManager.class).in(Scopes.SINGLETON);
         binder.bind(Metadata.class).to(MetadataManager.class).in(Scopes.SINGLETON);
+        binder.bind(StaticFunctionNamespaceStore.class).in(Scopes.SINGLETON);
 
         // type
         newSetBinder(binder, Type.class);

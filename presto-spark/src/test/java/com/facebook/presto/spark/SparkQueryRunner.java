@@ -19,7 +19,6 @@ import com.facebook.presto.connector.ConnectorManager;
 import com.facebook.presto.cost.StatsCalculator;
 import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.metadata.QualifiedObjectName;
-import com.facebook.presto.security.AccessControlManager;
 import com.facebook.presto.server.PluginManager;
 import com.facebook.presto.spark.PrestoSparkQueryExecutionFactory.PrestoQueryExecution;
 import com.facebook.presto.spark.spi.QueryExecutionFactory;
@@ -95,7 +94,8 @@ public class SparkQueryRunner
 
         PrestoSparkInjectorFactory injectorFactory = new PrestoSparkInjectorFactory(
                 ImmutableMap.of(
-                        "presto.version", "testversion"),
+                        "presto.version", "testversion",
+                        "query.hash-partition-count", Integer.toString(nodeCount * 2)),
                 ImmutableList.of());
 
         Injector injector = injectorFactory.create();
@@ -124,14 +124,6 @@ public class SparkQueryRunner
                 ImmutableMap.of(
                         // TODO: partitioned sources are not supported by Presto on Spark yet
                         "tpch.partitioning-enabled", "false"));
-
-        AccessControlManager accessControlManager = injector.getInstance(AccessControlManager.class);
-        try {
-            accessControlManager.loadSystemAccessControl();
-        }
-        catch (Exception e) {
-            throw new RuntimeException(e);
-        }
 
         // register the instance
         instanceId = randomUUID().toString();
